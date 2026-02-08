@@ -1,0 +1,41 @@
+env: ${ENV}
+
+log_file: ${LOG_FILE}
+log_level: ${LOG_LEVEL}
+
+auth:
+  jwt:
+    issuer: ${JWT_ISSUER}
+    signing_key: ${JWT_SIGNING_KEY}
+    clock_skew: ${JWT_CLOCK_SKEW}
+
+limits:
+  default_page_size: ${DEFAULT_PAGE_SIZE}
+  max_page_size: ${MAX_PAGE_SIZE}
+
+workspace:
+  invites:
+    default_ttl: ${INVITE_DEFAULT_TTL}
+    max_active_per_team: ${INVITE_MAX_ACTIVE_PER_TEAM}
+  join_requests:
+    max_pending_per_user: ${JOINREQ_MAX_PENDING_PER_USER}
+
+postgres:
+  host: ${PG_HOST}
+  port: ${PG_PORT}
+  user: ${PG_USER}
+  password: ${PG_PASSWORD}
+  DBName: ${PG_DBNAME}
+  connect_conf:
+    max_conns: ${PG_MAX_CONNS}
+    min_conns: ${PG_MIN_CONNS}
+    max_conn_lifetime: ${PG_MAX_CONN_LIFETIME}
+    max_conn_idle_time: ${PG_MAX_CONN_IDLE_TIME}
+
+grpc:
+  port: ${GRPC_PORT}
+  timeout: ${GRPC_TIMEOUT}
+
+migrations:
+  enabled: ${MIGRATIONS_ENABLED}
+  dir: ${MIGRATIONS_DIR}
