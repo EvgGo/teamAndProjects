@@ -1,0 +1,27 @@
+package models
+
+import "time"
+
+// Team членство в команде появляться автоматически,
+// когда пользователь становится участником проекта команды
+type Team struct {
+	ID          string
+	Name        string
+	Description string
+
+	IsInvitable bool
+	IsJoinable  bool
+
+	FounderID string
+	LeadID    string // "" => NULL
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type TeamMember struct {
+	TeamID   string
+	UserID   string
+	Duties   string // "" допустимо
+	JoinedAt time.Time
+}
