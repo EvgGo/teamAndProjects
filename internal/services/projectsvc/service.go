@@ -43,6 +43,26 @@ type ProjectJoinRequestsRepo interface {
 	UpdateStatus(ctx context.Context, requestID string, status models.JoinRequestStatus, decidedBy string, decidedAt time.Time) (models.ProjectJoinRequest, error)
 	CancelPendingByIDForRequester(ctx context.Context, requestID, requesterID string, at time.Time) (models.ProjectJoinRequest, error)
 	ListByProject(ctx context.Context, projectID string, status *models.JoinRequestStatus, pageSize int32, pageToken string) ([]models.ProjectJoinRequest, string, error)
+	ListManageableProjectJoinRequestBuckets(ctx context.Context, filter models.ListManageableProjectJoinRequestBucketsFilter) ([]models.ManageableProjectJoinRequestBucket, string, error)
+	//ListProjectJoinRequestDetails(ctx context.Context, filter models.ListProjectJoinRequestDetailsFilter) ([]models.ProjectJoinRequestDetails, string, error)
+}
+
+type ProjectJoinRequestDetailsRepo interface {
+	CanManageProjectJoinRequests(ctx context.Context, projectID, viewerID string) (bool, error)
+
+	ListProjectJoinRequestDetailsBase(
+		ctx context.Context,
+		filter models.ListProjectJoinRequestDetailsRepoFilter,
+	) ([]models.ProjectJoinRequestDetailsBase, string, error)
+
+	GetProjectSkills(ctx context.Context, projectID string) ([]models.ProjectSkill, error)
+}
+
+type CandidateSummaryProvider interface {
+	GetCandidatePublicSummaries(
+		ctx context.Context,
+		userIDs []string,
+	) (map[string]models.CandidatePublicSummary, error)
 }
 
 type ProjectPublicRepo interface {
@@ -51,7 +71,7 @@ type ProjectPublicRepo interface {
 
 // TeamsRepo нужны для авто-создания команды в CreateProject
 type TeamsRepo interface {
-	Create(ctx context.Context, in repo.CreateTeamInput) (models.Team, error)
+	Create(ctx context.Context, in models.CreateTeamInput) (models.Team, error)
 }
 
 type TeamMembersRepo interface {
@@ -75,14 +95,16 @@ type CreateProjectDBInput struct {
 }
 
 type Deps struct {
-	Tx          TxManager
-	Projects    ProjectsRepo
-	Members     ProjectMemberRepo
-	JoinReqs    ProjectJoinRequestsRepo
-	Public      ProjectPublicRepo
-	Log         *slog.Logger
-	Teams       TeamsRepo
-	TeamMembers TeamMembersRepo
+	Tx                       TxManager
+	Projects                 ProjectsRepo
+	Members                  ProjectMemberRepo
+	JoinReqs                 ProjectJoinRequestsRepo
+	JoinReqsDetails          ProjectJoinRequestDetailsRepo
+	CandidateSummaryProvider CandidateSummaryProvider
+	Public                   ProjectPublicRepo
+	Log                      *slog.Logger
+	Teams                    TeamsRepo
+	TeamMembers              TeamMembersRepo
 
 	ViewerProfile ViewerProfileClient
 
@@ -220,7 +242,7 @@ func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectPara
 		// create team
 		teamName := normalizeTeamName(in.Name, in.TeamName)
 		s.Deps.Log.Debug("CreateProject: создание команды", "teamName", teamName, "caller", caller)
-		team, err := s.Deps.Teams.Create(txCtx, repo.CreateTeamInput{
+		team, err := s.Deps.Teams.Create(txCtx, models.CreateTeamInput{
 			Name:        teamName,
 			Description: "",
 			IsInvitable: true,
@@ -872,6 +894,163 @@ func (s *Service) resolveViewerSkillIDs(ctx context.Context) ([]string, error) {
 	return result, nil
 }
 
+func (s *Service) ListManageableProjectJoinRequestBuckets(
+	ctx context.Context,
+	filter models.ListManageableProjectJoinRequestBucketsFilter,
+) ([]models.ManageableProjectJoinRequestBucket, string, error) {
+
+	log := s.Deps.Log.With(
+		"service_method", "ListManageableProjectJoinRequestBuckets",
+		"viewer_id", filter.ViewerID,
+		"status", filter.Status,
+		"query", filter.Query,
+		"page_size", filter.PageSize,
+		"page_token", filter.PageToken,
+	)
+
+	log.Debug("старт получения управляемых бакетов заявок")
+
+	filter.ViewerID = strings.TrimSpace(filter.ViewerID)
+	filter.Query = strings.TrimSpace(filter.Query)
+	filter.PageToken = strings.TrimSpace(filter.PageToken)
+
+	if filter.ViewerID == "" {
+		log.Warn("viewer_id пустой")
+		return nil, "", repo.ErrInvalidInput
+	}
+
+	if filter.Status == "" {
+		filter.Status = models.JoinPending
+	}
+
+	items, next, err := s.Deps.JoinReqs.ListManageableProjectJoinRequestBuckets(ctx, filter)
+	if err != nil {
+		log.Warn("repo вернул ошибку при получении бакетов заявок", "err", err)
+		return nil, "", err
+	}
+
+	log.Debug("управляемые бакеты заявок успешно получены",
+		"items_count", len(items),
+		"has_next_page", next != "",
+	)
+
+	return items, next, nil
+}
+
+func (s *Service) ListProjectJoinRequestDetails(
+	ctx context.Context,
+	filter models.ListProjectJoinRequestDetailsFilter,
+) ([]models.ProjectJoinRequestDetails, string, error) {
+
+	reqLog := s.Deps.Log.With(
+		"service_method", "ListProjectJoinRequestDetails",
+		"viewer_id", filter.ViewerID,
+		"project_id", filter.ProjectID,
+		"page_size", filter.PageSize,
+		"page_token", filter.PageToken,
+	)
+
+	if filter.Status != nil {
+		reqLog = reqLog.With("status", string(*filter.Status))
+	}
+
+	reqLog.Debug("начало получения детального списка заявок проекта")
+
+	filter.ViewerID = strings.TrimSpace(filter.ViewerID)
+	filter.ProjectID = strings.TrimSpace(filter.ProjectID)
+	filter.PageToken = strings.TrimSpace(filter.PageToken)
+
+	if filter.ViewerID == "" || filter.ProjectID == "" {
+		reqLog.Warn("невалидный фильтр: пустой viewer_id или project_id")
+		return nil, "", repo.ErrInvalidInput
+	}
+
+	if filter.PageSize <= 0 {
+		filter.PageSize = 20
+	}
+	if filter.PageSize > 100 {
+		filter.PageSize = 100
+	}
+
+	canManage, err := s.Deps.JoinReqsDetails.CanManageProjectJoinRequests(ctx, filter.ProjectID, filter.ViewerID)
+	if err != nil {
+		reqLog.Warn("не удалось проверить права на управление заявками", "err", err)
+		return nil, "", err
+	}
+	if !canManage {
+		reqLog.Warn("доступ запрещён: пользователь не может управлять заявками проекта")
+		return nil, "", repo.ErrForbidden
+	}
+
+	baseItems, nextPageToken, err := s.Deps.JoinReqsDetails.ListProjectJoinRequestDetailsBase(ctx, models.ListProjectJoinRequestDetailsRepoFilter{
+		ProjectID: filter.ProjectID,
+		Status:    filter.Status,
+		PageSize:  filter.PageSize,
+		PageToken: filter.PageToken,
+	})
+	if err != nil {
+		reqLog.Warn("не удалось получить базовый список заявок", "err", err)
+		return nil, "", err
+	}
+
+	if len(baseItems) == 0 {
+		reqLog.Debug("заявки не найдены")
+		return []models.ProjectJoinRequestDetails{}, nextPageToken, nil
+	}
+
+	projectSkills, err := s.Deps.JoinReqsDetails.GetProjectSkills(ctx, filter.ProjectID)
+	if err != nil {
+		reqLog.Warn("не удалось получить skills проекта", "err", err)
+		return nil, "", err
+	}
+
+	requesterIDs := collectUniqueRequesterIDs(baseItems)
+
+	candidateMap, err := s.Deps.CandidateSummaryProvider.GetCandidatePublicSummaries(ctx, requesterIDs)
+	if err != nil {
+		reqLog.Warn("не удалось получить публичные summary кандидатов", "err", err)
+		return nil, "", err
+	}
+
+	out := make([]models.ProjectJoinRequestDetails, 0, len(baseItems))
+	for _, item := range baseItems {
+		candidate, ok := candidateMap[item.RequesterID]
+		if !ok {
+			reqLog.Warn("по requester_id не найден candidate summary, будет возвращён пустой summary",
+				"requester_id", item.RequesterID,
+			)
+			candidate = models.CandidatePublicSummary{
+				UserID: item.RequesterID,
+			}
+		}
+
+		match := BuildProjectSkillMatchSummary(projectSkills, candidate.Skills)
+
+		out = append(out, models.ProjectJoinRequestDetails{
+			ID:              item.ID,
+			ProjectID:       item.ProjectID,
+			RequesterID:     item.RequesterID,
+			Message:         item.Message,
+			Status:          item.Status,
+			DecidedBy:       item.DecidedBy,
+			DecidedAt:       item.DecidedAt,
+			CreatedAt:       item.CreatedAt,
+			RejectionReason: item.RejectionReason,
+			Candidate:       candidate,
+			SkillMatch:      match,
+		})
+	}
+
+	reqLog.Debug("детальный список заявок успешно собран",
+		"items_count", len(out),
+		"project_skills_count", len(projectSkills),
+		"requester_ids_count", len(requesterIDs),
+		"next_page_token_empty", nextPageToken == "",
+	)
+
+	return out, nextPageToken, nil
+}
+
 func resolveEffectivePublicProjectSort(
 	sortBy models.ProjectPublicSortBy,
 	sortOrder models.SortOrder,
@@ -882,4 +1061,98 @@ func resolveEffectivePublicProjectSort(
 	}
 
 	return sortBy, sortOrder
+}
+
+func collectUniqueRequesterIDs(items []models.ProjectJoinRequestDetailsBase) []string {
+	if len(items) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(items))
+	out := make([]string, 0, len(items))
+
+	for _, item := range items {
+		id := strings.TrimSpace(item.RequesterID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+
+	return out
+}
+
+func BuildProjectSkillMatchSummary(
+	projectSkills []models.ProjectSkill,
+	candidateSkills []models.ProjectSkill,
+) models.SkillMatchSummary {
+
+	projectUnique := uniqueProjectSkillsByID(projectSkills)
+	candidateSet := make(map[int]struct{}, len(candidateSkills))
+
+	for _, skill := range candidateSkills {
+		if skill.ID == 0 {
+			continue
+		}
+		candidateSet[skill.ID] = struct{}{}
+	}
+
+	total := len(projectUnique)
+	if total == 0 {
+		return models.SkillMatchSummary{
+			MatchPercent:            0,
+			MatchedSkillsCount:      0,
+			TotalProjectSkillsCount: 0,
+			MatchedSkills:           []models.ProjectSkill{},
+			MissingProjectSkills:    []models.ProjectSkill{},
+		}
+	}
+
+	matched := make([]models.ProjectSkill, 0, total)
+	missing := make([]models.ProjectSkill, 0, total)
+
+	for _, skill := range projectUnique {
+		if _, ok := candidateSet[skill.ID]; ok {
+			matched = append(matched, skill)
+		} else {
+			missing = append(missing, skill)
+		}
+	}
+
+	matchedCount := len(matched)
+	matchPercent := int32((matchedCount * 100) / total)
+
+	return models.SkillMatchSummary{
+		MatchPercent:            matchPercent,
+		MatchedSkillsCount:      int32(matchedCount),
+		TotalProjectSkillsCount: int32(total),
+		MatchedSkills:           matched,
+		MissingProjectSkills:    missing,
+	}
+}
+
+func uniqueProjectSkillsByID(skills []models.ProjectSkill) []models.ProjectSkill {
+	if len(skills) == 0 {
+		return nil
+	}
+
+	seen := make(map[int]struct{}, len(skills))
+	out := make([]models.ProjectSkill, 0, len(skills))
+
+	for _, skill := range skills {
+		if skill.ID == 0 {
+			continue
+		}
+		if _, ok := seen[skill.ID]; ok {
+			continue
+		}
+		seen[skill.ID] = struct{}{}
+		out = append(out, skill)
+	}
+
+	return out
 }

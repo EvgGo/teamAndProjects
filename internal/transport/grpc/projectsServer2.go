@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"teamAndProjects/internal/authctx"
@@ -21,11 +22,12 @@ import (
 
 type ProjectsServer struct {
 	workspacev1.UnimplementedProjectsServer
+	log *slog.Logger
 	svc *projectsvc.Service
 }
 
-func NewProjectsServer(svc *projectsvc.Service) *ProjectsServer {
-	return &ProjectsServer{svc: svc}
+func NewProjectsServer(svc *projectsvc.Service, log *slog.Logger) *ProjectsServer {
+	return &ProjectsServer{svc: svc, log: log}
 }
 
 // CreateProject создает проект и автоматически генерирует команду
@@ -305,7 +307,7 @@ func (s *ProjectsServer) ListPublicProjects(ctx context.Context, req *workspacev
 		return nil, status.Error(codes.InvalidArgument, "invalid sort_order")
 	}
 
-	pageSize := normalizePageSize(req.GetPageSize(), 10, 100)
+	pageSize := utils.NormalizePageSize(req.GetPageSize(), 10, 100)
 
 	filter := models.ListPublicProjectsFilter{
 		Query:          strings.TrimSpace(req.GetQuery()),
@@ -447,6 +449,125 @@ func (s *ProjectsServer) SetProjectOpen(ctx context.Context, req *workspacev1.Se
 //		Rights:    projectMemberRightsToProto(updated.Rights),
 //	}, nil
 //}
+
+func (s *ProjectsServer) ListManageableProjectJoinRequestBuckets(
+	ctx context.Context,
+	req *workspacev1.ListManageableProjectJoinRequestBucketsRequest,
+) (*workspacev1.ListManageableProjectJoinRequestBucketsResponse, error) {
+
+	reqLog := s.log.With(
+		"grpc_method", "ListManageableProjectJoinRequestBuckets",
+		"status", req.GetStatus().String(),
+		"query", req.GetQuery(),
+		"page_size", req.GetPageSize(),
+		"page_token", req.GetPageToken(),
+	)
+
+	reqLog.Debug("получен gRPC-запрос на список управляемых бакетов заявок в проекты")
+
+	viewerID, err := viewerIDFromContext(ctx)
+	if err != nil {
+		reqLog.Warn("не удалось получить user_id из контекста", "err", err)
+		return nil, err
+	}
+
+	status, ok, err := joinStatusToModel(req.GetStatus())
+	if err != nil {
+		reqLog.Warn("некорректный status в запросе", "err", err)
+		return nil, err
+	}
+	if !ok {
+		status = models.JoinPending
+	}
+
+	filter := models.ListManageableProjectJoinRequestBucketsFilter{
+		ViewerID:  viewerID,
+		Status:    status,
+		Query:     req.GetQuery(),
+		PageSize:  req.GetPageSize(),
+		PageToken: req.GetPageToken(),
+	}
+
+	items, next, err := s.svc.ListManageableProjectJoinRequestBuckets(ctx, filter)
+	if err != nil {
+		reqLog.Warn("не удалось получить бакеты заявок", "err", err)
+		return nil, svcerr.ToStatus(err)
+	}
+
+	out := make([]*workspacev1.ManageableProjectJoinRequestBucket, 0, len(items))
+	for _, item := range items {
+		out = append(out, manageableProjectJoinRequestBucketToProto(&item))
+	}
+
+	reqLog.Debug("бакеты заявок успешно получены",
+		"viewer_id", viewerID,
+		"items_count", len(out),
+		"has_next_page", next != "",
+	)
+
+	return &workspacev1.ListManageableProjectJoinRequestBucketsResponse{
+		Items:         out,
+		NextPageToken: next,
+	}, nil
+}
+
+func (s *ProjectsServer) ListProjectJoinRequestDetails(
+	ctx context.Context,
+	req *workspacev1.ListProjectJoinRequestDetailsRequest,
+) (*workspacev1.ListProjectJoinRequestDetailsResponse, error) {
+	reqLog := s.log.With(
+		"grpc_method", "ListProjectJoinRequestDetails",
+		"project_id", req.GetProjectId(),
+		"status", req.GetStatus().String(),
+		"page_size", req.GetPageSize(),
+		"page_token", req.GetPageToken(),
+	)
+
+	reqLog.Debug("получен gRPC-запрос на детальный список заявок в проект")
+
+	viewerID, err := viewerIDFromContext(ctx)
+	if err != nil {
+		reqLog.Warn("не удалось получить user_id из контекста", "err", err)
+		return nil, err
+	}
+
+	status, ok, err := joinStatusToModel(req.GetStatus())
+	if err != nil {
+		reqLog.Warn("некорректный статус заявки", "err", err)
+		return nil, err
+	}
+
+	filter := models.ListProjectJoinRequestDetailsFilter{
+		ViewerID:  viewerID,
+		ProjectID: strings.TrimSpace(req.GetProjectId()),
+		PageSize:  req.GetPageSize(),
+		PageToken: strings.TrimSpace(req.GetPageToken()),
+	}
+	if ok {
+		filter.Status = &status
+	}
+
+	items, nextPageToken, err := s.svc.ListProjectJoinRequestDetails(ctx, filter)
+	if err != nil {
+		reqLog.Warn("не удалось получить детальный список заявок", "err", err)
+		return nil, svcerr.ToStatus(err)
+	}
+
+	out := make([]*workspacev1.ProjectJoinRequestDetails, 0, len(items))
+	for _, item := range items {
+		out = append(out, projectJoinRequestDetailsToProto(&item))
+	}
+
+	reqLog.Debug("детальный список заявок успешно собран",
+		"items_count", len(out),
+		"next_page_token_empty", nextPageToken == "",
+	)
+
+	return &workspacev1.ListProjectJoinRequestDetailsResponse{
+		Requests:      out,
+		NextPageToken: nextPageToken,
+	}, nil
+}
 
 // RequestJoinProject создает заявку на вступление от текущего пользователя
 func (s *ProjectsServer) RequestJoinProject(ctx context.Context, req *workspacev1.RequestJoinProjectRequest) (*workspacev1.ProjectJoinRequest, error) {
@@ -618,16 +739,6 @@ func projectSkillMatchModeToModel(
 		}
 		return models.ProjectSkillMatchModeUnspecified
 	}
-}
-
-func normalizePageSize(v int32, def int32, max int32) int32 {
-	if v <= 0 {
-		return def
-	}
-	if v > max {
-		return max
-	}
-	return v
 }
 
 // подумать за реализацию

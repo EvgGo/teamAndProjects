@@ -262,3 +262,175 @@ func (r *ProjectJoinRequestRepo) ListByProject(ctx context.Context, projectID st
 
 	return res, next, nil
 }
+
+func (r *ProjectJoinRequestRepo) ListManageableProjectJoinRequestBuckets(
+	ctx context.Context,
+	filter models.ListManageableProjectJoinRequestBucketsFilter,
+) ([]models.ManageableProjectJoinRequestBucket, string, error) {
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	viewerID := strings.TrimSpace(filter.ViewerID)
+	if viewerID == "" {
+		return nil, "", ErrInvalidInput
+	}
+
+	pageSize := filter.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	status := filter.Status
+	if status == "" {
+		status = models.JoinPending
+	}
+
+	curT, curID, err := DecodeCursor(strings.TrimSpace(filter.PageToken))
+	if err != nil {
+		return nil, "", err
+	}
+
+	args := make([]any, 0, 8)
+	n := 1
+
+	manageableWhere := []string{
+		"pm.user_id = $" + itoa(n),
+	}
+	args = append(args, viewerID)
+	n++
+
+	manageableWhere = append(manageableWhere,
+		"(pm.manager_rights = true OR pm.manager_member = true)",
+	)
+
+	if q := strings.TrimSpace(filter.Query); q != "" {
+		manageableWhere = append(manageableWhere, "p.name ILIKE $"+itoa(n))
+		args = append(args, "%"+q+"%")
+		n++
+	}
+
+	statusPlaceholder := "$" + itoa(n)
+	args = append(args, string(status))
+	n++
+
+	cursorWhere := ""
+	if !curT.IsZero() && curID != "" {
+		cursorWhere = "WHERE (b.last_request_created_at, b.project_id) < ($" + itoa(n) + ", $" + itoa(n+1) + ")"
+		args = append(args, curT, curID)
+		n += 2
+	}
+
+	limitPlaceholder := "$" + itoa(n)
+	args = append(args, pageSize+1)
+
+	query := `
+		WITH manageable_projects AS (
+			SELECT
+				p.id,
+				p.name,
+				p.status,
+				p.is_open,
+				pm.manager_rights,
+				pm.manager_member,
+				pm.manager_projects,
+				pm.manager_tasks
+			FROM project_members pm
+			JOIN projects p ON p.id = pm.project_id
+			WHERE ` + strings.Join(manageableWhere, " AND ") + `
+			),
+			buckets AS (
+				SELECT
+					mp.id AS project_id,
+					mp.name AS project_name,
+					mp.status AS project_status,
+					mp.is_open,
+					COUNT(jr.id)::int4 AS pending_requests_count,
+					MAX(jr.created_at) AS last_request_created_at,
+					mp.manager_rights,
+					mp.manager_member,
+					mp.manager_projects,
+					mp.manager_tasks
+				FROM manageable_projects mp
+				JOIN project_join_requests jr
+					ON jr.project_id = mp.id
+				WHERE jr.status = ` + statusPlaceholder + `
+					GROUP BY
+						mp.id,
+						mp.name,
+						mp.status,
+						mp.is_open,
+						mp.manager_rights,
+						mp.manager_member,
+						mp.manager_projects,
+						mp.manager_tasks
+				)
+				SELECT
+					b.project_id,
+					b.project_name,
+					b.project_status,
+					b.is_open,
+					b.pending_requests_count,
+					b.last_request_created_at,
+					b.manager_rights,
+					b.manager_member,
+					b.manager_projects,
+					b.manager_tasks
+				FROM buckets b
+				` + cursorWhere + `
+				ORDER BY b.last_request_created_at DESC, b.project_id DESC
+				LIMIT ` + limitPlaceholder + `;
+	`
+
+	rows, err := qr.Query(ctx, query, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	items := make([]models.ManageableProjectJoinRequestBucket, 0, pageSize+1)
+	for rows.Next() {
+		var item models.ManageableProjectJoinRequestBucket
+		var statusStr string
+		var lastRequestAt time.Time
+
+		if err = rows.Scan(
+			&item.ProjectID,
+			&item.ProjectName,
+			&statusStr,
+			&item.IsOpen,
+			&item.PendingRequestsCount,
+			&lastRequestAt,
+			&item.MyRights.ManagerRights,
+			&item.MyRights.ManagerMember,
+			&item.MyRights.ManagerProjects,
+			&item.MyRights.ManagerTasks,
+		); err != nil {
+			return nil, "", err
+		}
+
+		item.ProjectStatus = models.ProjectStatus(statusStr)
+		item.LastRequestCreatedAt = &lastRequestAt
+
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, "", err
+	}
+
+	var next string
+	if len(items) > int(pageSize) {
+		last := items[pageSize-1]
+
+		if last.LastRequestCreatedAt != nil {
+			next = EncodeCursor(*last.LastRequestCreatedAt, last.ProjectID)
+		}
+
+		items = items[:pageSize]
+	}
+
+	return items, next, nil
+}

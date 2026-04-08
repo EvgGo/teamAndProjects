@@ -49,3 +49,25 @@ type ProjectSkill struct {
 	ID   int
 	Name string
 }
+
+type ListProjectMembersFilter struct {
+	ProjectID string
+	PageSize  int32
+	PageToken string
+}
+
+type AddProjectMemberInput struct {
+	ProjectID string
+	UserID    string
+	Rights    ProjectRights
+}
+
+type UpdateProjectMemberRightsInput struct {
+	ProjectID string
+	UserID    string
+
+	ManagerRights   *bool
+	ManagerMember   *bool
+	ManagerProjects *bool
+	ManagerTasks    *bool
+}
