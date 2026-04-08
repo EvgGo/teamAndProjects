@@ -44,7 +44,7 @@ type ProjectJoinRequestsRepo interface {
 	CancelPendingByIDForRequester(ctx context.Context, requestID, requesterID string, at time.Time) (models.ProjectJoinRequest, error)
 	ListByProject(ctx context.Context, projectID string, status *models.JoinRequestStatus, pageSize int32, pageToken string) ([]models.ProjectJoinRequest, string, error)
 	ListManageableProjectJoinRequestBuckets(ctx context.Context, filter models.ListManageableProjectJoinRequestBucketsFilter) ([]models.ManageableProjectJoinRequestBucket, string, error)
-	//ListProjectJoinRequestDetails(ctx context.Context, filter models.ListProjectJoinRequestDetailsFilter) ([]models.ProjectJoinRequestDetails, string, error)
+	ListMyProjectJoinRequests(ctx context.Context, filter models.ListMyProjectJoinRequestsFilter) ([]models.MyProjectJoinRequestItem, string, error)
 }
 
 type ProjectJoinRequestDetailsRepo interface {
@@ -1049,6 +1049,26 @@ func (s *Service) ListProjectJoinRequestDetails(
 	)
 
 	return out, nextPageToken, nil
+}
+
+func (s *Service) ListMyProjectJoinRequests(
+	ctx context.Context,
+	filter models.ListMyProjectJoinRequestsFilter,
+) ([]models.MyProjectJoinRequestItem, string, error) {
+
+	filter.ViewerID = strings.TrimSpace(filter.ViewerID)
+	if filter.ViewerID == "" {
+		return nil, "", fmt.Errorf("viewer_id is required")
+	}
+
+	if filter.PageSize <= 0 {
+		filter.PageSize = 20
+	}
+	if filter.PageSize > 100 {
+		filter.PageSize = 100
+	}
+
+	return s.Deps.JoinReqs.ListMyProjectJoinRequests(ctx, filter)
 }
 
 func resolveEffectivePublicProjectSort(

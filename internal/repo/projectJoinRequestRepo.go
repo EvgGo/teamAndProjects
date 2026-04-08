@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"github.com/jackc/pgx/v5/pgtype"
 	"strings"
 	"time"
 
@@ -433,4 +434,141 @@ func (r *ProjectJoinRequestRepo) ListManageableProjectJoinRequestBuckets(
 	}
 
 	return items, next, nil
+}
+
+func (r *ProjectJoinRequestRepo) ListMyProjectJoinRequests(
+	ctx context.Context,
+	filter models.ListMyProjectJoinRequestsFilter,
+) ([]models.MyProjectJoinRequestItem, string, error) {
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	pageSize := filter.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	curT, curID, err := DecodeCursor(strings.TrimSpace(filter.PageToken))
+	if err != nil {
+		return nil, "", err
+	}
+
+	where := []string{
+		"r.requester_id = $1",
+	}
+	args := make([]any, 0, 6)
+	args = append(args, filter.ViewerID)
+	n := 2
+
+	if filter.Status != nil {
+		where = append(where, "r.status = $"+itoa(n))
+		args = append(args, string(*filter.Status))
+		n++
+	}
+
+	if !curT.IsZero() && curID != "" {
+		where = append(where, "(r.created_at, r.id) < ($"+itoa(n)+", $"+itoa(n+1)+")")
+		args = append(args, curT, curID)
+		n += 2
+	}
+
+	q := `
+		SELECT
+			r.id,
+			r.project_id,
+			r.requester_id,
+			r.message,
+			r.status,
+			r.decided_by,
+			r.decided_at,
+			r.created_at,
+			r.decision_reason,
+		
+			p.id,
+			p.name,
+			p.status,
+			p.is_open
+		FROM project_join_requests r
+		JOIN projects p ON p.id = r.project_id
+		WHERE ` + strings.Join(where, " AND ") + `
+		ORDER BY r.created_at DESC, r.id DESC
+		LIMIT $` + itoa(n)
+
+	args = append(args, pageSize+1)
+
+	rows, err := qr.Query(ctx, q, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	items := make([]models.MyProjectJoinRequestItem, 0, pageSize+1)
+
+	for rows.Next() {
+		var item models.MyProjectJoinRequestItem
+
+		var (
+			reqStatusRaw     string
+			projectStatusRaw string
+			createdAt        time.Time
+
+			decidedBy      pgtype.Text
+			decidedAt      pgtype.Timestamptz
+			decisionReason pgtype.Text
+		)
+
+		err = rows.Scan(
+			&item.Request.ID,
+			&item.Request.ProjectID,
+			&item.Request.RequesterID,
+			&item.Request.Message,
+			&reqStatusRaw,
+			&decidedBy,
+			&decidedAt,
+			&createdAt,
+			&decisionReason,
+
+			&item.ProjectID,
+			&item.ProjectName,
+			&projectStatusRaw,
+			&item.ProjectIsOpen,
+		)
+		if err != nil {
+			return nil, "", err
+		}
+
+		item.Request.Status = models.JoinRequestStatus(reqStatusRaw)
+		item.Request.CreatedAt = createdAt
+		item.ProjectStatus = models.ProjectStatus(projectStatusRaw)
+
+		if decidedBy.Valid {
+			item.Request.DecidedBy = decidedBy.String
+		}
+		if decidedAt.Valid {
+			v := decidedAt.Time
+			item.Request.DecidedAt = &v
+		}
+		if decisionReason.Valid {
+			v := decisionReason.String
+			item.Request.DecisionReason = &v
+		}
+
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, "", err
+	}
+
+	var nextToken string
+	if len(items) > int(pageSize) {
+		last := items[pageSize-1]
+		nextToken = EncodeCursor(last.Request.CreatedAt, last.Request.ID)
+		items = items[:pageSize]
+	}
+
+	return items, nextToken, nil
 }

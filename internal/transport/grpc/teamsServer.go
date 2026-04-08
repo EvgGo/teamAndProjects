@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"teamAndProjects/internal/services/svcerr"
+	"teamAndProjects/internal/transport/grpc/mapper"
 
 	workspacev1 "github.com/EvgGo/proto/proto/gen/go/teamAndProjects"
 	"google.golang.org/grpc/codes"
@@ -71,7 +72,7 @@ func (s *TeamsServer) CreateTeam(ctx context.Context, req *workspacev1.CreateTea
 		"founder_id", team.FounderID,
 	)
 
-	return teamToProto(&team), nil
+	return mapper.TeamToProto(&team), nil
 }
 
 func (s *TeamsServer) GetTeam(ctx context.Context, req *workspacev1.GetTeamRequest) (*workspacev1.Team, error) {
@@ -90,7 +91,7 @@ func (s *TeamsServer) GetTeam(ctx context.Context, req *workspacev1.GetTeamReque
 
 	reqLog.Debug("команда успешно получена", "team_id", team.ID)
 
-	return teamToProto(&team), nil
+	return mapper.TeamToProto(&team), nil
 }
 
 func (s *TeamsServer) UpdateTeam(ctx context.Context, req *workspacev1.UpdateTeamRequest) (*workspacev1.Team, error) {
@@ -134,7 +135,7 @@ func (s *TeamsServer) UpdateTeam(ctx context.Context, req *workspacev1.UpdateTea
 
 	reqLog.Debug("команда успешно обновлена", "team_id", team.ID)
 
-	return teamToProto(&team), nil
+	return mapper.TeamToProto(&team), nil
 }
 
 func (s *TeamsServer) DeleteTeam(ctx context.Context, req *workspacev1.DeleteTeamRequest) (*emptypb.Empty, error) {
@@ -190,7 +191,7 @@ func (s *TeamsServer) ListTeams(ctx context.Context, req *workspacev1.ListTeamsR
 
 	out := make([]*workspacev1.Team, 0, len(items))
 	for _, item := range items {
-		out = append(out, teamToProto(&item))
+		out = append(out, mapper.TeamToProto(&item))
 	}
 
 	reqLog.Debug("список команд успешно получен",
@@ -228,7 +229,7 @@ func (s *TeamsServer) ListTeamMembers(ctx context.Context, req *workspacev1.List
 
 	out := make([]*workspacev1.TeamMember, 0, len(items))
 	for _, item := range items {
-		out = append(out, teamMemberToProto(&item))
+		out = append(out, mapper.TeamMemberToProto(&item))
 	}
 
 	reqLog.Debug("список участников команды успешно получен",
@@ -273,7 +274,7 @@ func (s *TeamsServer) UpdateTeamMember(ctx context.Context, req *workspacev1.Upd
 		"user_id", member.UserID,
 	)
 
-	return teamMemberToProto(&member), nil
+	return mapper.TeamMemberToProto(&member), nil
 }
 
 func (s *TeamsServer) RemoveTeamMember(ctx context.Context, req *workspacev1.RemoveTeamMemberRequest) (*emptypb.Empty, error) {

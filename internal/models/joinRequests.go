@@ -19,9 +19,9 @@ type ProjectJoinRequest struct {
 	RequesterID string
 	Message     string
 
-	Status    JoinRequestStatus
-	DecidedBy string     // "" => NULL
-	DecidedAt *time.Time // nil => NULL
-
-	CreatedAt time.Time
+	Status         JoinRequestStatus
+	DecidedBy      string     // "" => NULL
+	DecidedAt      *time.Time // nil => NULL
+	CreatedAt      time.Time
+	DecisionReason *string
 }

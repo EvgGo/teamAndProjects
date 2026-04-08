@@ -2,13 +2,12 @@ package grpc
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"teamAndProjects/internal/authctx"
 	"teamAndProjects/internal/services/projectsvc"
 	"teamAndProjects/internal/services/svcerr"
+	"teamAndProjects/internal/transport/grpc/mapper"
 	"teamAndProjects/pkg/utils"
 	"time"
 
@@ -32,7 +31,7 @@ func NewProjectsServer(svc *projectsvc.Service, log *slog.Logger) *ProjectsServe
 
 // CreateProject создает проект и автоматически генерирует команду
 func (s *ProjectsServer) CreateProject(ctx context.Context, req *workspacev1.CreateProjectRequest) (*workspacev1.Project, error) {
-	startedAt, isNull, err := timeFromDate(req.GetStartedAt())
+	startedAt, isNull, err := mapper.TimeFromDate(req.GetStartedAt())
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +40,7 @@ func (s *ProjectsServer) CreateProject(ctx context.Context, req *workspacev1.Cre
 	}
 
 	// finished_at опционален; если year == 0 - NULL
-	finishedAt, isFinishedNull, err := timeFromDate(req.GetFinishedAt())
+	finishedAt, isFinishedNull, err := mapper.TimeFromDate(req.GetFinishedAt())
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +49,7 @@ func (s *ProjectsServer) CreateProject(ctx context.Context, req *workspacev1.Cre
 		finishedAtPtr = &finishedAt
 	}
 
-	statusL, ok, err := projectStatusToModel(req.GetStatus())
+	statusL, ok, err := mapper.ProjectStatusToModel(req.GetStatus())
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +78,7 @@ func (s *ProjectsServer) CreateProject(ctx context.Context, req *workspacev1.Cre
 		return nil, svcerr.ToStatus(err)
 	}
 
-	return s.projectToProto(project), nil
+	return mapper.ProjectToProto(project), nil
 }
 
 // GetProject возвращает информацию о проекте с учетом прав доступа
@@ -89,7 +88,7 @@ func (s *ProjectsServer) GetProject(ctx context.Context, req *workspacev1.GetPro
 	if err != nil {
 		return nil, svcerr.ToStatus(err)
 	}
-	return s.projectToProto(project), nil
+	return mapper.ProjectToProto(project), nil
 }
 
 func (s *ProjectsServer) UpdateProject(ctx context.Context, req *workspacev1.UpdateProjectRequest) (*workspacev1.Project, error) {
@@ -117,7 +116,7 @@ func (s *ProjectsServer) UpdateProject(ctx context.Context, req *workspacev1.Upd
 	}
 
 	if req.Status != nil {
-		statusL, ok, err := projectStatusToModel(req.GetStatus())
+		statusL, ok, err := mapper.ProjectStatusToModel(req.GetStatus())
 		if err != nil {
 			return nil, err
 		}
@@ -135,7 +134,7 @@ func (s *ProjectsServer) UpdateProject(ctx context.Context, req *workspacev1.Upd
 	// - если поле отсутствует => не трогаем
 	// - если присутствует, year must be > 0
 	if req.StartedAt != nil {
-		startedAt, isNull, err := timeFromDate(req.GetStartedAt())
+		startedAt, isNull, err := mapper.TimeFromDate(req.GetStartedAt())
 		if err != nil {
 			return nil, err
 		}
@@ -152,7 +151,7 @@ func (s *ProjectsServer) UpdateProject(ctx context.Context, req *workspacev1.Upd
 	if req.FinishedAt != nil {
 		in.FinishedAtSet = true
 
-		finishedAt, isNull, err := timeFromDate(req.GetFinishedAt())
+		finishedAt, isNull, err := mapper.TimeFromDate(req.GetFinishedAt())
 		if err != nil {
 			return nil, err
 		}
@@ -169,7 +168,7 @@ func (s *ProjectsServer) UpdateProject(ctx context.Context, req *workspacev1.Upd
 	// - если ids пустой => очистить все skills
 	// - если ids заполнен => полностью заменить набор
 	if req.Skills != nil {
-		skillIDs, err := normalizeProjectSkillIDs(req.GetSkills().GetIds(), 60)
+		skillIDs, err := mapper.NormalizeProjectSkillIDs(req.GetSkills().GetIds(), 60)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
@@ -182,7 +181,7 @@ func (s *ProjectsServer) UpdateProject(ctx context.Context, req *workspacev1.Upd
 		return nil, svcerr.ToStatus(err)
 	}
 
-	return s.projectToProto(project), nil
+	return mapper.ProjectToProto(project), nil
 }
 
 // DeleteProject удаляет проект
@@ -204,7 +203,7 @@ func (s *ProjectsServer) ListProjects(ctx context.Context, req *workspacev1.List
 
 	var statusPtr *models.ProjectStatus
 	if req.GetStatus() != workspacev1.ProjectStatus_PROJECT_STATUS_UNSPECIFIED {
-		st, ok, err := projectStatusToModel(req.GetStatus())
+		st, ok, err := mapper.ProjectStatusToModel(req.GetStatus())
 		if err != nil {
 			return nil, err
 		}
@@ -213,7 +212,7 @@ func (s *ProjectsServer) ListProjects(ctx context.Context, req *workspacev1.List
 		}
 	}
 
-	skillIDs, err := normalizeProjectSkillIDs(req.GetSkillIds(), 60)
+	skillIDs, err := mapper.NormalizeProjectSkillIDs(req.GetSkillIds(), 60)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -228,7 +227,7 @@ func (s *ProjectsServer) ListProjects(ctx context.Context, req *workspacev1.List
 		PageSize:       req.GetPageSize(),
 		PageToken:      strings.TrimSpace(req.GetPageToken()),
 		SkillIDs:       skillIDs,
-		SkillMatchMode: projectSkillMatchModeToModel(req.GetSkillMatchMode(), len(skillIDs) > 0),
+		SkillMatchMode: mapper.ProjectSkillMatchModeToModel(req.GetSkillMatchMode(), len(skillIDs) > 0),
 	}
 
 	projects, next, err := s.svc.ListProjects(ctx, filter)
@@ -238,7 +237,7 @@ func (s *ProjectsServer) ListProjects(ctx context.Context, req *workspacev1.List
 
 	out := make([]*workspacev1.Project, 0, len(projects))
 	for _, p := range projects {
-		out = append(out, s.projectToProto(p))
+		out = append(out, mapper.ProjectToProto(p))
 	}
 
 	return &workspacev1.ListProjectsResponse{
@@ -270,7 +269,7 @@ func (s *ProjectsServer) ListPublicProjects(ctx context.Context, req *workspacev
 
 	var statusPtr *models.ProjectStatus
 	if req.GetStatus() != workspacev1.ProjectStatus_PROJECT_STATUS_UNSPECIFIED {
-		st, ok, err := projectStatusToModel(req.GetStatus())
+		st, ok, err := mapper.ProjectStatusToModel(req.GetStatus())
 		if err != nil {
 			reqLog.Error("ProjectsServer.ListPublicProjects: invalid status",
 				"status", req.GetStatus().String(),
@@ -283,13 +282,13 @@ func (s *ProjectsServer) ListPublicProjects(ctx context.Context, req *workspacev
 		}
 	}
 
-	skillIDs, err := normalizeProjectSkillIDs(req.GetSkillIds(), 60)
+	skillIDs, err := mapper.NormalizeProjectSkillIDs(req.GetSkillIds(), 60)
 	if err != nil {
 		reqLog.Error("ProjectsServer.ListPublicProjects: invalid skill_ids", "error", err)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	sortBy, err := projectPublicSortByToModel(req.GetSortBy())
+	sortBy, err := mapper.ProjectPublicSortByToModel(req.GetSortBy())
 	if err != nil {
 		reqLog.Error("ProjectsServer.ListPublicProjects: invalid sort_by",
 			"sortBy", req.GetSortBy().String(),
@@ -298,7 +297,7 @@ func (s *ProjectsServer) ListPublicProjects(ctx context.Context, req *workspacev
 		return nil, status.Error(codes.InvalidArgument, "invalid sort_by")
 	}
 
-	sortOrder, err := sortOrderToModel(req.GetSortOrder())
+	sortOrder, err := mapper.SortOrderToModel(req.GetSortOrder())
 	if err != nil {
 		reqLog.Error("ProjectsServer.ListPublicProjects: invalid sort_order",
 			"sortOrder", req.GetSortOrder().String(),
@@ -315,7 +314,7 @@ func (s *ProjectsServer) ListPublicProjects(ctx context.Context, req *workspacev
 		PageSize:       pageSize,
 		PageToken:      strings.TrimSpace(req.GetPageToken()),
 		SkillIDs:       skillIDs,
-		SkillMatchMode: projectSkillMatchModeToModel(req.GetSkillMatchMode(), len(skillIDs) > 0),
+		SkillMatchMode: mapper.ProjectSkillMatchModeToModel(req.GetSkillMatchMode(), len(skillIDs) > 0),
 		SortBy:         sortBy,
 		SortOrder:      sortOrder,
 	}
@@ -347,7 +346,7 @@ func (s *ProjectsServer) ListPublicProjects(ctx context.Context, req *workspacev
 
 	out := make([]*workspacev1.ProjectPublic, 0, len(items))
 	for _, row := range items {
-		out = append(out, publicProjectRowToProto(&row))
+		out = append(out, mapper.PublicProjectRowToProto(&row))
 	}
 
 	reqLog.Debug("ProjectsServer.ListPublicProjects: response ready",
@@ -367,7 +366,7 @@ func (s *ProjectsServer) SetProjectOpen(ctx context.Context, req *workspacev1.Se
 	if err != nil {
 		return nil, svcerr.ToStatus(err)
 	}
-	return s.projectToProto(project), nil
+	return mapper.ProjectToProto(project), nil
 }
 
 // ListProjectMembers возвращает список участников проекта.
@@ -392,7 +391,7 @@ func (s *ProjectsServer) SetProjectOpen(ctx context.Context, req *workspacev1.Se
 
 // AddProjectMember добавляет участника в проект (требует прав manager_member / manager_rights).
 //func (s *ProjectsServer) AddProjectMember(ctx context.Context, req *workspacev1.AddProjectMemberRequest) (*workspacev1.ProjectMember, error) {
-//	rights := projectMemberRightsFromProto(req.GetRights())
+//	rights := ProjectMemberRightsFromProto(req.GetRights())
 //	member, err := s.svc.AddProjectMember(ctx, req.GetProjectId(), req.GetUserId(), rights)
 //	if err != nil {
 //		return nil, svcerr.ToStatus(err)
@@ -471,7 +470,7 @@ func (s *ProjectsServer) ListManageableProjectJoinRequestBuckets(
 		return nil, err
 	}
 
-	status, ok, err := joinStatusToModel(req.GetStatus())
+	status, ok, err := mapper.JoinStatusToModel(req.GetStatus())
 	if err != nil {
 		reqLog.Warn("некорректный status в запросе", "err", err)
 		return nil, err
@@ -496,7 +495,7 @@ func (s *ProjectsServer) ListManageableProjectJoinRequestBuckets(
 
 	out := make([]*workspacev1.ManageableProjectJoinRequestBucket, 0, len(items))
 	for _, item := range items {
-		out = append(out, manageableProjectJoinRequestBucketToProto(&item))
+		out = append(out, mapper.ManageableProjectJoinRequestBucketToProto(&item))
 	}
 
 	reqLog.Debug("бакеты заявок успешно получены",
@@ -531,7 +530,7 @@ func (s *ProjectsServer) ListProjectJoinRequestDetails(
 		return nil, err
 	}
 
-	status, ok, err := joinStatusToModel(req.GetStatus())
+	status, ok, err := mapper.JoinStatusToModel(req.GetStatus())
 	if err != nil {
 		reqLog.Warn("некорректный статус заявки", "err", err)
 		return nil, err
@@ -555,7 +554,7 @@ func (s *ProjectsServer) ListProjectJoinRequestDetails(
 
 	out := make([]*workspacev1.ProjectJoinRequestDetails, 0, len(items))
 	for _, item := range items {
-		out = append(out, projectJoinRequestDetailsToProto(&item))
+		out = append(out, mapper.ProjectJoinRequestDetailsToProto(&item))
 	}
 
 	reqLog.Debug("детальный список заявок успешно собран",
@@ -569,13 +568,89 @@ func (s *ProjectsServer) ListProjectJoinRequestDetails(
 	}, nil
 }
 
+func (s *ProjectsServer) ListMyProjectJoinRequests(
+	ctx context.Context,
+	req *workspacev1.ListMyProjectJoinRequestsRequest,
+) (*workspacev1.ListMyProjectJoinRequestsResponse, error) {
+
+	reqLog := s.log.With(
+		"grpc_method", "ListMyProjectJoinRequests",
+		"status", req.GetStatus().String(),
+		"page_size", req.GetPageSize(),
+		"page_token", req.GetPageToken(),
+	)
+
+	reqLog.Debug("получен gRPC-запрос на список моих заявок в проекты")
+
+	viewerID, err := viewerIDFromContext(ctx)
+	if err != nil {
+		reqLog.Warn("не удалось получить viewer_id из контекста", "err", err)
+		return nil, err
+	}
+
+	status, ok, err := mapper.JoinStatusToModel(req.GetStatus())
+	if err != nil {
+		reqLog.Warn("некорректный статус заявки", "err", err)
+		return nil, err
+	}
+
+	filter := models.ListMyProjectJoinRequestsFilter{
+		ViewerID:  viewerID,
+		PageSize:  req.GetPageSize(),
+		PageToken: req.GetPageToken(),
+	}
+	if ok {
+		filter.Status = &status
+	}
+
+	items, nextToken, err := s.svc.ListMyProjectJoinRequests(ctx, filter)
+	if err != nil {
+		reqLog.Warn("не удалось получить список моих заявок", "err", err)
+		return nil, err
+	}
+
+	resp := &workspacev1.ListMyProjectJoinRequestsResponse{
+		Items:         make([]*workspacev1.MyProjectJoinRequestItem, 0, len(items)),
+		NextPageToken: nextToken,
+	}
+
+	for _, item := range items {
+		resp.Items = append(resp.Items, mapper.MyProjectJoinRequestItemToProto(item))
+	}
+
+	reqLog.Debug("список моих заявок успешно собран", "count", len(resp.Items))
+	return resp, nil
+}
+
+//func joinRequestStatusPtrFromProto(in workspacev1.JoinRequestStatus) (*models.JoinRequestStatus, error) {
+//	switch in {
+//	case workspacev1.JoinRequestStatus_JOIN_REQUEST_STATUS_UNSPECIFIED:
+//		return nil, nil
+//	case workspacev1.JoinRequestStatus_JOIN_REQUEST_STATUS_PENDING:
+//		v := models.JoinRequestStatusPending
+//		return &v, nil
+//	case workspacev1.JoinRequestStatus_JOIN_REQUEST_STATUS_APPROVED:
+//		v := models.JoinRequestStatusApproved
+//		return &v, nil
+//	case workspacev1.JoinRequestStatus_JOIN_REQUEST_STATUS_REJECTED:
+//		v := models.JoinRequestStatusRejected
+//		return &v, nil
+//	case workspacev1.JoinRequestStatus_JOIN_REQUEST_STATUS_CANCELLED:
+//		v := models.JoinRequestStatusCancelled
+//		return &v, nil
+//	default:
+//		return nil, fmt.Errorf("unknown join request status: %v", in)
+//	}
+//}
+//
+
 // RequestJoinProject создает заявку на вступление от текущего пользователя
 func (s *ProjectsServer) RequestJoinProject(ctx context.Context, req *workspacev1.RequestJoinProjectRequest) (*workspacev1.ProjectJoinRequest, error) {
 	jr, err := s.svc.RequestJoinProject(ctx, req.GetProjectId(), req.GetMessage())
 	if err != nil {
 		return nil, svcerr.ToStatus(err)
 	}
-	return s.joinRequestToProto(jr), nil
+	return mapper.JoinRequestToProto(jr), nil
 }
 
 // CancelJoinProject отменяет свою pending-заявку
@@ -584,13 +659,13 @@ func (s *ProjectsServer) CancelJoinProject(ctx context.Context, req *workspacev1
 	if err != nil {
 		return nil, svcerr.ToStatus(err)
 	}
-	return s.joinRequestToProto(jr), nil
+	return mapper.JoinRequestToProto(jr), nil
 }
 
 // ListProjectJoinRequests возвращает список заявок на вступление в проект
 func (s *ProjectsServer) ListProjectJoinRequests(ctx context.Context, req *workspacev1.ListProjectJoinRequestsRequest) (*workspacev1.ListProjectJoinRequestsResponse, error) {
 	var statusPtr *models.JoinRequestStatus
-	if st, ok, err := joinStatusToModel(req.GetStatus()); err == nil && ok {
+	if st, ok, err := mapper.JoinStatusToModel(req.GetStatus()); err == nil && ok {
 		statusPtr = &st
 	} else if err != nil {
 		return nil, err
@@ -602,7 +677,7 @@ func (s *ProjectsServer) ListProjectJoinRequests(ctx context.Context, req *works
 	}
 	out := make([]*workspacev1.ProjectJoinRequest, 0, len(requests))
 	for _, r := range requests {
-		out = append(out, s.joinRequestToProto(r))
+		out = append(out, mapper.JoinRequestToProto(r))
 	}
 	return &workspacev1.ListProjectJoinRequestsResponse{
 		Requests:      out,
@@ -612,12 +687,12 @@ func (s *ProjectsServer) ListProjectJoinRequests(ctx context.Context, req *works
 
 // ApproveProjectJoinRequest одобряет заявку и добавляет пользователя в проект
 func (s *ProjectsServer) ApproveProjectJoinRequest(ctx context.Context, req *workspacev1.ApproveProjectJoinRequestRequest) (*workspacev1.ProjectJoinRequest, error) {
-	initialRights := projectMemberRightsFromProto(req.GetInitialRights())
+	initialRights := mapper.ProjectMemberRightsFromProto(req.GetInitialRights())
 	jr, err := s.svc.ApproveJoinRequest(ctx, req.GetRequestId(), initialRights)
 	if err != nil {
 		return nil, svcerr.ToStatus(err)
 	}
-	return s.joinRequestToProto(jr), nil
+	return mapper.JoinRequestToProto(jr), nil
 }
 
 // RejectProjectJoinRequest отклоняет заявку
@@ -626,119 +701,7 @@ func (s *ProjectsServer) RejectProjectJoinRequest(ctx context.Context, req *work
 	if err != nil {
 		return nil, svcerr.ToStatus(err)
 	}
-	return s.joinRequestToProto(jr), nil
-}
-
-// projectToProto конвертирует модель проекта в protobuf-сообщение
-func (s *ProjectsServer) projectToProto(p models.Project) *workspacev1.Project {
-
-	skillIDs := make([]string, 0, len(p.SkillIDs))
-	for _, id := range p.SkillIDs {
-		skillIDs = append(skillIDs, strconv.Itoa(id))
-	}
-
-	skills := make([]*workspacev1.ProjectSkill, 0, len(p.Skills))
-	for _, sk := range p.Skills {
-		skills = append(skills, &workspacev1.ProjectSkill{
-			Id:   strconv.Itoa(sk.ID),
-			Name: sk.Name,
-		})
-	}
-
-	return &workspacev1.Project{
-		Id:          p.ID,
-		TeamId:      p.TeamID,
-		CreatorId:   p.CreatorID,
-		Name:        p.Name,
-		Description: p.Description,
-		Status:      projectStatusFromModel(p.Status),
-		IsOpen:      p.IsOpen,
-		StartedAt:   dateFromTime(p.StartedAt),
-		FinishedAt:  dateFromTimePtr(p.FinishedAt),
-		CreatedAt:   dateFromTime(p.CreatedAt),
-		UpdatedAt:   dateFromTime(p.UpdatedAt),
-		SkillIds:    skillIDs,
-		Skills:      skills,
-	}
-}
-
-// joinRequestToProto конвертирует модель заявки в protobuf-сообщение
-func (s *ProjectsServer) joinRequestToProto(jrModel models.ProjectJoinRequest) *workspacev1.ProjectJoinRequest {
-	pb := &workspacev1.ProjectJoinRequest{
-		Id:          jrModel.ID,
-		ProjectId:   jrModel.ProjectID,
-		RequesterId: jrModel.RequesterID,
-		Message:     jrModel.Message,
-		Status:      joinStatusFromModel(jrModel.Status),
-		CreatedAt:   dateFromTimePtr(&jrModel.CreatedAt),
-	}
-	if jrModel.DecidedBy != "" {
-		pb.DecidedBy = &jrModel.DecidedBy
-	}
-	if jrModel.DecidedAt != nil {
-		pb.DecidedAt = dateFromTimePtr(jrModel.DecidedAt)
-	}
-	return pb
-}
-
-func projectSkillIDsToProto(ids []int) []string {
-	out := make([]string, 0, len(ids))
-	for _, id := range ids {
-		out = append(out, strconv.FormatInt(int64(id), 10))
-	}
-	return out
-}
-
-func normalizeProjectSkillIDs(raw []string, max int) ([]int, error) {
-	if len(raw) == 0 {
-		return nil, nil
-	}
-
-	seen := make(map[int]struct{}, len(raw))
-	out := make([]int, 0, len(raw))
-
-	for _, item := range raw {
-		v := strings.TrimSpace(item)
-		if v == "" {
-			return nil, fmt.Errorf("skill_ids must not contain empty values")
-		}
-
-		n, err := strconv.ParseInt(v, 10, 32)
-		if err != nil || n <= 0 {
-			return nil, fmt.Errorf("invalid skill_id: %q", v)
-		}
-
-		id := int(n)
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		out = append(out, id)
-	}
-
-	if len(out) > max {
-		return nil, fmt.Errorf("maximum %d skill_ids allowed", max)
-	}
-
-	return out, nil
-}
-
-func projectSkillMatchModeToModel(
-	in workspacev1.ProjectSkillMatchMode,
-	hasSkillFilter bool,
-) models.ProjectSkillMatchMode {
-	switch in {
-	case workspacev1.ProjectSkillMatchMode_PROJECT_SKILL_MATCH_MODE_ANY:
-		return models.ProjectSkillMatchModeAny
-	case workspacev1.ProjectSkillMatchMode_PROJECT_SKILL_MATCH_MODE_ALL:
-		return models.ProjectSkillMatchModeAll
-	default:
-		if hasSkillFilter {
-			// по умолчанию для фильтра по skills лучше ALL
-			return models.ProjectSkillMatchModeAll
-		}
-		return models.ProjectSkillMatchModeUnspecified
-	}
+	return mapper.JoinRequestToProto(jr), nil
 }
 
 // подумать за реализацию
