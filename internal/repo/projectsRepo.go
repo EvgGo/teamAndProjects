@@ -86,6 +86,32 @@ func (r *ProjectsRepo) getByIDFrom(ctx context.Context, qr Querier, projectID st
 	return p, nil
 }
 
+func (r *ProjectsRepo) DeleteProject(ctx context.Context, projectID string) error {
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return ErrInvalidInput
+	}
+
+	const query = `
+		DELETE FROM projects
+		WHERE id = $1
+		`
+
+	tag, err := qr.Exec(ctx, query, projectID)
+	if err != nil {
+		return err
+	}
+
+	if tag.RowsAffected() == 0 {
+		return ErrProjectNotFound
+	}
+
+	return nil
+}
+
 func (r *ProjectsRepo) ListProjects(ctx context.Context, filter *models.ProjectsFilter) ([]models.Project, string, error) {
 
 	qr := querierFromCtx(ctx, r.pool)

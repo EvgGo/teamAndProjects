@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"teamAndProjects/internal/authctx"
+	"teamAndProjects/internal/repo"
 	"teamAndProjects/internal/services/projectsvc"
 	"teamAndProjects/internal/services/svcerr"
 	"teamAndProjects/internal/transport/grpc/mapper"
@@ -186,8 +187,35 @@ func (s *ProjectsServer) UpdateProject(ctx context.Context, req *workspacev1.Upd
 
 // DeleteProject удаляет проект
 func (s *ProjectsServer) DeleteProject(ctx context.Context, req *workspacev1.DeleteProjectRequest) (*emptypb.Empty, error) {
-	//TODO: implemented DeleteProject
-	return nil, status.Error(codes.Unimplemented, "method DeleteProject not implemented")
+
+	reqLog := s.log.With(
+		"grpc_method", "DeleteProject",
+		"project_id", req.GetProjectId(),
+	)
+
+	reqLog.Debug("получен gRPC-запрос на удаление проекта")
+
+	projectID := strings.TrimSpace(req.GetProjectId())
+	if projectID == "" {
+		reqLog.Warn("project_id is required")
+		return nil, repo.ErrInvalidInput
+	}
+
+	viewerID, err := viewerIDFromContext(ctx)
+	if err != nil {
+		reqLog.Warn("не удалось получить viewer_id из контекста", "err", err)
+		return nil, err
+	}
+
+	err = s.svc.DeleteProject(ctx, viewerID, projectID)
+	if err != nil {
+		reqLog.Warn("не удалось удалить проект", "err", err)
+		return nil, err
+	}
+
+	reqLog.Debug("проект успешно удалён")
+
+	return &emptypb.Empty{}, nil
 }
 
 // ListProjects возвращает список проектов (мои, команды и т.п.)
@@ -705,7 +733,6 @@ func (s *ProjectsServer) RejectProjectJoinRequest(ctx context.Context, req *work
 }
 
 // подумать за реализацию
-//   - DeleteProject(ctx, projectID)
 //   - GetProjectMember(ctx, projectID, userID)
 //   - ListProjectMembers(ctx, projectID, pageSize, pageToken)
 //   - AddProjectMember(ctx, projectID, userID, rights)

@@ -30,7 +30,7 @@ type ProjectMemberRepo interface {
 
 type ProjectsRepo interface {
 	GetByID(ctx context.Context, projectID string) (models.Project, error)
-
+	DeleteProject(ctx context.Context, projectID string) error
 	Create(ctx context.Context, in models.CreateProjectInput) (models.Project, error)
 	Update(ctx context.Context, in models.UpdateProjectInput) (models.Project, error)
 	SetOpen(ctx context.Context, projectID string, isOpen bool) (models.Project, error)
@@ -304,6 +304,33 @@ func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectPara
 
 	s.Deps.Log.Info("CreateProject: проект успешно создан", "projectID", out.ID, "caller", caller)
 	return out, nil
+}
+
+func (s *Service) DeleteProject(
+	ctx context.Context,
+	viewerID string,
+	projectID string,
+) error {
+	viewerID = strings.TrimSpace(viewerID)
+	projectID = strings.TrimSpace(projectID)
+
+	if viewerID == "" {
+		return repo.ErrForbidden
+	}
+	if projectID == "" {
+		return repo.ErrInvalidInput
+	}
+
+	project, err := s.Deps.Projects.GetByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+
+	if project.CreatorID != viewerID {
+		return repo.ErrProjectDeleteForbidden
+	}
+
+	return s.Deps.Projects.DeleteProject(ctx, projectID)
 }
 
 func (s *Service) ListProjects(
