@@ -1,4 +1,4 @@
-package grpc
+package mapper
 
 import (
 	"google.golang.org/grpc/codes"

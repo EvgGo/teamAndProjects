@@ -1,4 +1,4 @@
-package grpc
+package mapper
 
 import (
 	"time"
@@ -9,8 +9,8 @@ import (
 	"github.com/EvgGo/proto/proto/gen/go/teamAndProjects"
 )
 
-// dateFromTime делает proto Date из time.Time (UTC, только Y/M/D)
-func dateFromTime(t time.Time) *workspacev1.Date {
+// DateFromTime делает proto Date из time.Time (UTC, только Y/M/D)
+func DateFromTime(t time.Time) *workspacev1.Date {
 	t = t.In(time.UTC)
 	return &workspacev1.Date{
 		Year:  int32(t.Year()),
@@ -19,10 +19,10 @@ func dateFromTime(t time.Time) *workspacev1.Date {
 	}
 }
 
-// timeFromDate делает time.Time (UTC midnight) из proto Date
+// TimeFromDate делает time.Time (UTC midnight) из proto Date
 // Возвращает (t, isNull, err)
 // По договору: year==0 => NULL
-func timeFromDate(d *workspacev1.Date) (time.Time, bool, error) {
+func TimeFromDate(d *workspacev1.Date) (time.Time, bool, error) {
 	if d == nil || d.GetYear() == 0 {
 		return time.Time{}, true, nil
 	}
@@ -51,11 +51,11 @@ func timeFromDate(d *workspacev1.Date) (time.Time, bool, error) {
 	return tt, false, nil
 }
 
-// dateFromTimePtr делает proto Date из *time.Time.
+// DateFromTimePtr делает proto Date из *time.Time.
 // Если входной указатель nil, возвращает nil (NULL)
-func dateFromTimePtr(t *time.Time) *workspacev1.Date {
+func DateFromTimePtr(t *time.Time) *workspacev1.Date {
 	if t == nil {
 		return nil
 	}
-	return dateFromTime(*t)
+	return DateFromTime(*t)
 }

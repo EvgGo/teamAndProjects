@@ -1,4 +1,4 @@
-package grpc
+package mapper
 
 import (
 	"fmt"
@@ -9,10 +9,10 @@ import (
 	"teamAndProjects/internal/models"
 )
 
-// projectStatusToModel: proto enum -> models.ProjectStatus (строка для БД)
+// ProjectStatusToModel : proto enum -> models.ProjectStatus (строка для БД)
 // Возвращает (status, ok, nil):
 // ok=false если UNSPECIFIED => фильтр не применяем
-func projectStatusToModel(s workspacev1.ProjectStatus) (models.ProjectStatus, bool, error) {
+func ProjectStatusToModel(s workspacev1.ProjectStatus) (models.ProjectStatus, bool, error) {
 	switch s {
 	case workspacev1.ProjectStatus_PROJECT_STATUS_UNSPECIFIED:
 		return "", false, nil
@@ -29,8 +29,8 @@ func projectStatusToModel(s workspacev1.ProjectStatus) (models.ProjectStatus, bo
 	}
 }
 
-// projectStatusFromModel: models.ProjectStatus (DB string) -> proto enum
-func projectStatusFromModel(s models.ProjectStatus) workspacev1.ProjectStatus {
+// ProjectStatusFromModel : models.ProjectStatus (DB string) -> proto enum
+func ProjectStatusFromModel(s models.ProjectStatus) workspacev1.ProjectStatus {
 	switch s {
 	case models.ProjectNotStarted:
 		return workspacev1.ProjectStatus_PROJECT_STATUS_NOT_STARTED
@@ -45,10 +45,10 @@ func projectStatusFromModel(s models.ProjectStatus) workspacev1.ProjectStatus {
 	}
 }
 
-// joinStatusToModel: proto enum -> models.JoinRequestStatus (строка для БД)
+// JoinStatusToModel : proto enum -> models.JoinRequestStatus (строка для БД)
 // Возвращает (status, ok, nil):
 // ok=false если UNSPECIFIED => фильтр не применяем
-func joinStatusToModel(s workspacev1.JoinRequestStatus) (models.JoinRequestStatus, bool, error) {
+func JoinStatusToModel(s workspacev1.JoinRequestStatus) (models.JoinRequestStatus, bool, error) {
 	switch s {
 	case workspacev1.JoinRequestStatus_JOIN_REQUEST_STATUS_UNSPECIFIED:
 		return "", false, nil
@@ -65,8 +65,8 @@ func joinStatusToModel(s workspacev1.JoinRequestStatus) (models.JoinRequestStatu
 	}
 }
 
-// joinStatusFromModel: models.JoinRequestStatus (DB string) -> proto enum
-func joinStatusFromModel(s models.JoinRequestStatus) workspacev1.JoinRequestStatus {
+// JoinStatusFromModel : models.JoinRequestStatus (DB string) -> proto enum
+func JoinStatusFromModel(s models.JoinRequestStatus) workspacev1.JoinRequestStatus {
 	switch s {
 	case models.JoinPending:
 		return workspacev1.JoinRequestStatus_JOIN_REQUEST_STATUS_PENDING
@@ -81,8 +81,8 @@ func joinStatusFromModel(s models.JoinRequestStatus) workspacev1.JoinRequestStat
 	}
 }
 
-// projectMemberRightsToProto конвертирует права модели в proto-права
-func projectMemberRightsToProto(rights models.ProjectRights) *workspacev1.ProjectRights {
+// ProjectMemberRightsToProto конвертирует права модели в proto-права
+func ProjectMemberRightsToProto(rights models.ProjectRights) *workspacev1.ProjectRights {
 	return &workspacev1.ProjectRights{
 		ManagerRights:   rights.ManagerRights,
 		ManagerMember:   rights.ManagerMember,
@@ -91,8 +91,8 @@ func projectMemberRightsToProto(rights models.ProjectRights) *workspacev1.Projec
 	}
 }
 
-// projectMemberRightsFromProto конвертирует proto-права в модель
-func projectMemberRightsFromProto(rights *workspacev1.ProjectRights) models.ProjectRights {
+// ProjectMemberRightsFromProto конвертирует proto-права в модель
+func ProjectMemberRightsFromProto(rights *workspacev1.ProjectRights) models.ProjectRights {
 	if rights == nil {
 		return models.ProjectRights{}
 	}
@@ -104,7 +104,7 @@ func projectMemberRightsFromProto(rights *workspacev1.ProjectRights) models.Proj
 	}
 }
 
-func projectPublicSortByToModel(v workspacev1.ProjectPublicSortBy) (models.ProjectPublicSortBy, error) {
+func ProjectPublicSortByToModel(v workspacev1.ProjectPublicSortBy) (models.ProjectPublicSortBy, error) {
 	switch v {
 	case workspacev1.ProjectPublicSortBy_PROJECT_PUBLIC_SORT_BY_UNSPECIFIED:
 		return models.ProjectPublicSortByCreatedAt, nil
@@ -119,7 +119,7 @@ func projectPublicSortByToModel(v workspacev1.ProjectPublicSortBy) (models.Proje
 	}
 }
 
-func sortOrderToModel(v workspacev1.SortOrder) (models.SortOrder, error) {
+func SortOrderToModel(v workspacev1.SortOrder) (models.SortOrder, error) {
 	switch v {
 	case workspacev1.SortOrder_SORT_ORDER_UNSPECIFIED:
 		return models.SortOrderDesc, nil

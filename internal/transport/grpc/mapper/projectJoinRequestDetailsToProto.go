@@ -1,4 +1,4 @@
-package grpc
+package mapper
 
 import (
 	workspacev1 "github.com/EvgGo/proto/proto/gen/go/teamAndProjects"
@@ -6,7 +6,7 @@ import (
 	"teamAndProjects/internal/models"
 )
 
-func projectJoinRequestDetailsToProto(in *models.ProjectJoinRequestDetails) *workspacev1.ProjectJoinRequestDetails {
+func ProjectJoinRequestDetailsToProto(in *models.ProjectJoinRequestDetails) *workspacev1.ProjectJoinRequestDetails {
 	if in == nil {
 		return nil
 	}
@@ -16,18 +16,18 @@ func projectJoinRequestDetailsToProto(in *models.ProjectJoinRequestDetails) *wor
 		ProjectId:   in.ProjectID,
 		RequesterId: in.RequesterID,
 		Message:     in.Message,
-		Status:      joinStatusFromModel(in.Status),
-		CreatedAt:   dateFromTime(in.CreatedAt),
+		Status:      JoinStatusFromModel(in.Status),
+		CreatedAt:   DateFromTime(in.CreatedAt),
 
-		Candidate:  candidatePublicSummaryToProto(in.Candidate),
-		SkillMatch: skillMatchSummaryToProto(in.SkillMatch),
+		Candidate:  CandidatePublicSummaryToProto(in.Candidate),
+		SkillMatch: SkillMatchSummaryToProto(in.SkillMatch),
 	}
 
 	if in.DecidedBy != nil {
 		out.DecidedBy = proto.String(*in.DecidedBy)
 	}
 	if in.DecidedAt != nil && !in.DecidedAt.IsZero() {
-		out.DecidedAt = dateFromTime(*in.DecidedAt)
+		out.DecidedAt = DateFromTime(*in.DecidedAt)
 	}
 	if in.RejectionReason != nil {
 		out.RejectionReason = proto.String(*in.RejectionReason)
@@ -36,22 +36,22 @@ func projectJoinRequestDetailsToProto(in *models.ProjectJoinRequestDetails) *wor
 	return out
 }
 
-func candidatePublicSummaryToProto(in models.CandidatePublicSummary) *workspacev1.CandidatePublicSummary {
+func CandidatePublicSummaryToProto(in models.CandidatePublicSummary) *workspacev1.CandidatePublicSummary {
 	return &workspacev1.CandidatePublicSummary{
 		UserId:    in.UserID,
 		FirstName: in.FirstName,
 		LastName:  in.LastName,
 		About:     in.About,
-		Skills:    projectSkillsToProto(in.Skills),
+		Skills:    ProjectSkillsToProto(in.Skills),
 	}
 }
 
-func skillMatchSummaryToProto(in models.SkillMatchSummary) *workspacev1.SkillMatchSummary {
+func SkillMatchSummaryToProto(in models.SkillMatchSummary) *workspacev1.SkillMatchSummary {
 	return &workspacev1.SkillMatchSummary{
 		MatchPercent:            in.MatchPercent,
 		MatchedSkillsCount:      in.MatchedSkillsCount,
 		TotalProjectSkillsCount: in.TotalProjectSkillsCount,
-		MatchedSkills:           projectSkillsToProto(in.MatchedSkills),
-		MissingProjectSkills:    projectSkillsToProto(in.MissingProjectSkills),
+		MatchedSkills:           ProjectSkillsToProto(in.MatchedSkills),
+		MissingProjectSkills:    ProjectSkillsToProto(in.MissingProjectSkills),
 	}
 }

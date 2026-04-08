@@ -1,4 +1,4 @@
-package grpc
+package mapper
 
 import (
 	workspacev1 "github.com/EvgGo/proto/proto/gen/go/teamAndProjects"
@@ -6,8 +6,8 @@ import (
 	"teamAndProjects/internal/models"
 )
 
-// projectPublicToProto конвертирует публичный проект модели в proto
-func projectPublicToProto(p *models.ProjectPublic) *workspacev1.ProjectPublic {
+// ProjectPublicToProto конвертирует публичный проект модели в proto
+func ProjectPublicToProto(p *models.ProjectPublic) *workspacev1.ProjectPublic {
 
 	if p == nil {
 		return nil
@@ -18,22 +18,22 @@ func projectPublicToProto(p *models.ProjectPublic) *workspacev1.ProjectPublic {
 		TeamId:      p.TeamID,
 		Name:        p.Name,
 		Description: p.Description,
-		Status:      projectStatusFromModel(p.Status),
+		Status:      ProjectStatusFromModel(p.Status),
 		IsOpen:      p.IsOpen,
-		StartedAt:   dateFromTime(p.StartedAt),
-		CreatedAt:   dateFromTime(p.CreatedAt),
-		SkillIds:    intSkillIDsToProto(p.SkillIDs),
-		Skills:      projectSkillsToProto(p.Skills),
+		StartedAt:   DateFromTime(p.StartedAt),
+		CreatedAt:   DateFromTime(p.CreatedAt),
+		SkillIds:    IntSkillIDsToProto(p.SkillIDs),
+		Skills:      ProjectSkillsToProto(p.Skills),
 	}
 
 	if p.FinishedAt != nil {
-		out.FinishedAt = dateFromTime(*p.FinishedAt)
+		out.FinishedAt = DateFromTime(*p.FinishedAt)
 	}
 
 	return out
 }
 
-func intSkillIDsToProto(ids []int) []string {
+func IntSkillIDsToProto(ids []int) []string {
 
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {
@@ -42,7 +42,7 @@ func intSkillIDsToProto(ids []int) []string {
 	return out
 }
 
-func projectSkillsToProto(skills []models.ProjectSkill) []*workspacev1.ProjectSkill {
+func ProjectSkillsToProto(skills []models.ProjectSkill) []*workspacev1.ProjectSkill {
 
 	if len(skills) == 0 {
 		return nil
@@ -58,13 +58,13 @@ func projectSkillsToProto(skills []models.ProjectSkill) []*workspacev1.ProjectSk
 	return out
 }
 
-func publicProjectRowToProto(row *models.PublicProjectRow) *workspacev1.ProjectPublic {
+func PublicProjectRowToProto(row *models.PublicProjectRow) *workspacev1.ProjectPublic {
 
 	if row == nil {
 		return nil
 	}
 
-	out := projectPublicToProto(&row.Project)
+	out := ProjectPublicToProto(&row.Project)
 	if out == nil {
 		return nil
 	}
