@@ -3,8 +3,10 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"github.com/jackc/pgx/v5/pgtype"
 	"strings"
+	"teamAndProjects/pkg/utils"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -178,14 +180,10 @@ func (r *ProjectJoinRequestRepo) CancelPendingByIDForRequester(ctx context.Conte
 
 // ListByProject - менеджеры проекта смотрят заявки
 func (r *ProjectJoinRequestRepo) ListByProject(ctx context.Context, projectID string, status *models.JoinRequestStatus, pageSize int32, pageToken string) ([]models.ProjectJoinRequest, string, error) {
+
 	qr := querierFromCtx(ctx, r.pool)
 
-	if pageSize <= 0 {
-		pageSize = 20
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
+	pageSize = utils.NormalizePageSize(pageSize, defaultInvitationPageSize, maxInvitationPageSize)
 
 	curT, curID, err := DecodeCursor(pageToken)
 	if err != nil {
@@ -276,13 +274,7 @@ func (r *ProjectJoinRequestRepo) ListManageableProjectJoinRequestBuckets(
 		return nil, "", ErrInvalidInput
 	}
 
-	pageSize := filter.PageSize
-	if pageSize <= 0 {
-		pageSize = 20
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
+	pageSize := utils.NormalizePageSize(filter.PageSize, defaultInvitationPageSize, maxInvitationPageSize)
 
 	status := filter.Status
 	if status == "" {
@@ -443,13 +435,7 @@ func (r *ProjectJoinRequestRepo) ListMyProjectJoinRequests(
 
 	qr := querierFromCtx(ctx, r.pool)
 
-	pageSize := filter.PageSize
-	if pageSize <= 0 {
-		pageSize = 20
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
+	pageSize := utils.NormalizePageSize(filter.PageSize, defaultInvitationPageSize, maxInvitationPageSize)
 
 	curT, curID, err := DecodeCursor(strings.TrimSpace(filter.PageToken))
 	if err != nil {
@@ -571,4 +557,87 @@ func (r *ProjectJoinRequestRepo) ListMyProjectJoinRequests(
 	}
 
 	return items, nextToken, nil
+}
+
+func (r *ProjectJoinRequestRepo) ClosePendingByProjectAndRequester(
+	ctx context.Context,
+	projectID, requesterID string,
+	decidedBy string,
+	reason *string,
+	at time.Time,
+) (models.ProjectJoinRequest, error) {
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	const query = `
+		update project_join_requests
+		set
+			status = $3,
+			decided_by = $4,
+			decided_at = $5,
+			decision_reason = $6
+		where project_id = $1
+		  and requester_id = $2
+		  and status = $7
+		returning
+			id,
+			project_id,
+			requester_id,
+			message,
+			status,
+			decided_by,
+			decided_at,
+			created_at,
+			decision_reason;
+	`
+
+	req, err := scanProjectJoinRequest(qr.QueryRow(
+		ctx,
+		query,
+		projectID,
+		requesterID,
+		string(models.JoinRejected),
+		decidedBy,
+		at,
+		reason,
+		string(models.JoinPending),
+	))
+	if err != nil {
+		return models.ProjectJoinRequest{}, fmt.Errorf(
+			"close pending join request by project and requester: %w",
+			mapNoRows(err),
+		)
+	}
+
+	return req, nil
+}
+
+func scanProjectJoinRequest(row interface{ Scan(dest ...any) error }) (models.ProjectJoinRequest, error) {
+
+	var req models.ProjectJoinRequest
+	var status string
+	var decidedBy *string
+
+	err := row.Scan(
+		&req.ID,
+		&req.ProjectID,
+		&req.RequesterID,
+		&req.Message,
+		&status,
+		&decidedBy,
+		&req.DecidedAt,
+		&req.CreatedAt,
+		&req.DecisionReason,
+	)
+	if err != nil {
+		return models.ProjectJoinRequest{}, err
+	}
+
+	req.Status = models.JoinRequestStatus(status)
+
+	if decidedBy != nil {
+		req.DecidedBy = *decidedBy
+	}
+
+	return req, nil
 }

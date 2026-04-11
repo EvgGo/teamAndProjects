@@ -4,10 +4,10 @@ import (
 	"context"
 	ssov1 "github.com/EvgGo/proto/proto/gen/go/sso"
 	"log/slog"
-	"strconv"
 	"strings"
 	"teamAndProjects/internal/helpers"
 	"teamAndProjects/internal/models"
+	"teamAndProjects/pkg/utils"
 )
 
 type CandidateSummaryProvider interface {
@@ -42,7 +42,7 @@ func (p *CandidateSummaryProviderSSO) GetCandidatePublicSummaries(
 		"user_ids_count", len(userIDs),
 	)
 
-	uniqueIDs := uniqueNonEmptyStrings(userIDs)
+	uniqueIDs := utils.UniqueNonEmptyStrings(userIDs)
 	if len(uniqueIDs) == 0 {
 		reqLog.Debug("пустой список user_ids")
 		return map[string]models.CandidatePublicSummary{}, nil
@@ -73,11 +73,13 @@ func (p *CandidateSummaryProviderSSO) GetCandidatePublicSummaries(
 			continue
 		}
 
+		about := strings.TrimSpace(user.GetAbout())
+
 		out[userID] = models.CandidatePublicSummary{
 			UserID:    userID,
 			FirstName: strings.TrimSpace(user.GetFirstName()),
 			LastName:  strings.TrimSpace(user.GetLastName()),
-			About:     strings.TrimSpace(user.GetAbout()),
+			About:     &about,
 			Skills:    mapSSOSkillsToProjectSkills(user.GetSkills()),
 		}
 	}
@@ -91,13 +93,13 @@ func (p *CandidateSummaryProviderSSO) GetCandidatePublicSummaries(
 	return out, nil
 }
 
-func mapSSOSkillsToProjectSkills(items []*ssov1.Skill) []models.ProjectSkill {
+func mapSSOSkillsToProjectSkills(items []*ssov1.Skill) []models.Skill {
 
 	if len(items) == 0 {
-		return []models.ProjectSkill{}
+		return []models.Skill{}
 	}
 
-	out := make([]models.ProjectSkill, 0, len(items))
+	out := make([]models.Skill, 0, len(items))
 	seen := make(map[string]struct{}, len(items))
 
 	for _, item := range items {
@@ -114,38 +116,10 @@ func mapSSOSkillsToProjectSkills(items []*ssov1.Skill) []models.ProjectSkill {
 		}
 		seen[id] = struct{}{}
 
-		idInt, err := strconv.Atoi(id)
-		if err != nil {
-			continue
-		}
-
-		out = append(out, models.ProjectSkill{
-			ID:   idInt,
+		out = append(out, models.Skill{
+			ID:   id,
 			Name: strings.TrimSpace(item.GetName()),
 		})
-	}
-
-	return out
-}
-
-func uniqueNonEmptyStrings(items []string) []string {
-	if len(items) == 0 {
-		return nil
-	}
-
-	seen := make(map[string]struct{}, len(items))
-	out := make([]string, 0, len(items))
-
-	for _, item := range items {
-		item = strings.TrimSpace(item)
-		if item == "" {
-			continue
-		}
-		if _, ok := seen[item]; ok {
-			continue
-		}
-		seen[item] = struct{}{}
-		out = append(out, item)
 	}
 
 	return out

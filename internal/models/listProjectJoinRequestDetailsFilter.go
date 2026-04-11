@@ -12,19 +12,26 @@ type ListProjectJoinRequestDetailsFilter struct {
 }
 
 type CandidatePublicSummary struct {
-	UserID    string
-	FirstName string
-	LastName  string
-	About     string
-	Skills    []ProjectSkill
+	UserID            string
+	FirstName         string
+	LastName          string
+	About             *string
+	AvatarURL         *string
+	IsOpenSuggestions bool
+	Skills            []Skill
+}
+
+type Skill struct {
+	ID   string
+	Name string
 }
 
 type SkillMatchSummary struct {
 	MatchPercent            int32
 	MatchedSkillsCount      int32
 	TotalProjectSkillsCount int32
-	MatchedSkills           []ProjectSkill
-	MissingProjectSkills    []ProjectSkill
+	MatchedSkills           []Skill
+	MissingProjectSkills    []Skill
 }
 
 type ProjectJoinRequestDetails struct {

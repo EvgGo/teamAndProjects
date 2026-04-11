@@ -36,22 +36,22 @@ func ProjectJoinRequestDetailsToProto(in *models.ProjectJoinRequestDetails) *wor
 	return out
 }
 
-func CandidatePublicSummaryToProto(in models.CandidatePublicSummary) *workspacev1.CandidatePublicSummary {
-	return &workspacev1.CandidatePublicSummary{
-		UserId:    in.UserID,
-		FirstName: in.FirstName,
-		LastName:  in.LastName,
-		About:     in.About,
-		Skills:    ProjectSkillsToProto(in.Skills),
-	}
-}
-
-func SkillMatchSummaryToProto(in models.SkillMatchSummary) *workspacev1.SkillMatchSummary {
-	return &workspacev1.SkillMatchSummary{
-		MatchPercent:            in.MatchPercent,
-		MatchedSkillsCount:      in.MatchedSkillsCount,
-		TotalProjectSkillsCount: in.TotalProjectSkillsCount,
-		MatchedSkills:           ProjectSkillsToProto(in.MatchedSkills),
-		MissingProjectSkills:    ProjectSkillsToProto(in.MissingProjectSkills),
-	}
-}
+//func CandidatePublicSummaryToProto(in models.CandidatePublicSummary) *workspacev1.CandidatePublicSummary {
+//	return &workspacev1.CandidatePublicSummary{
+//		UserId:    in.UserID,
+//		FirstName: in.FirstName,
+//		LastName:  in.LastName,
+//		About:     in.About,
+//		Skills:    ProjectSkillsToProto(in.Skills),
+//	}
+//}
+//
+//func SkillMatchSummaryToProto(in models.SkillMatchSummary) *workspacev1.SkillMatchSummary {
+//	return &workspacev1.SkillMatchSummary{
+//		MatchPercent:            in.MatchPercent,
+//		MatchedSkillsCount:      in.MatchedSkillsCount,
+//		TotalProjectSkillsCount: in.TotalProjectSkillsCount,
+//		MatchedSkills:           ProjectSkillsToProto(in.MatchedSkills),
+//		MissingProjectSkills:    ProjectSkillsToProto(in.MissingProjectSkills),
+//	}
+//}

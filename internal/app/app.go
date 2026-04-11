@@ -152,6 +152,7 @@ func New(
 	joinReqRepo := repo.NewProjectJoinRequestRepo(pool)
 	publicRepo := repo.NewProjectPublicRepo(pool)
 	joinReqsDetailsRepo := repo.NewProjectJoinRequestDetailsRepo(pool, log)
+	projectInvitations := repo.NewProjectInvitationsRepo(pool, log)
 
 	tx := repo.NewTxManager(pool)
 
@@ -174,6 +175,7 @@ func New(
 		JoinReqs:                 joinReqRepo,
 		JoinReqsDetails:          joinReqsDetailsRepo,
 		CandidateSummaryProvider: candidateSummaryProvider,
+		ProjectInvitations:       projectInvitations,
 		Public:                   publicRepo,
 		Log:                      log,
 		Teams:                    teamRepo,

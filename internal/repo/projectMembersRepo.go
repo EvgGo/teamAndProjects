@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"teamAndProjects/internal/models"
@@ -53,7 +54,7 @@ func (r *ProjectMembersRepo) GetMember(ctx context.Context, projectID, userID st
 
 // AddMember - добавляет участника в проект с правами
 // Если уже существует - ErrAlreadyExists
-func (r *ProjectMembersRepo) AddMember(ctx context.Context, projectID, userID string, rights models.ProjectRights) (models.ProjectMember, error) {
+func (r *ProjectMembersRepo) AddMember(ctx context.Context, input models.AddProjectMemberInput) (models.ProjectMember, error) {
 
 	q := `
 		INSERT INTO project_members (
@@ -67,11 +68,11 @@ func (r *ProjectMembersRepo) AddMember(ctx context.Context, projectID, userID st
 		`
 	qr := querierFromCtx(ctx, r.pool)
 
-	pid, err := parseUUID(projectID)
+	pid, err := parseUUID(input.ProjectID)
 	if err != nil {
 		return models.ProjectMember{}, err
 	}
-	uid, err := parseUUID(userID)
+	uid, err := parseUUID(input.UserID)
 	if err != nil {
 		return models.ProjectMember{}, err
 	}
@@ -79,10 +80,10 @@ func (r *ProjectMembersRepo) AddMember(ctx context.Context, projectID, userID st
 	var m models.ProjectMember
 	err = qr.QueryRow(ctx, q,
 		pid, uid,
-		rights.ManagerRights,
-		rights.ManagerMember,
-		rights.ManagerProjects,
-		rights.ManagerTasks,
+		input.Rights.ManagerRights,
+		input.Rights.ManagerMember,
+		input.Rights.ManagerProjects,
+		input.Rights.ManagerTasks,
 	).Scan(
 		&m.ProjectID, &m.UserID,
 		&m.Rights.ManagerRights,
@@ -171,4 +172,61 @@ func (r *ProjectMembersRepo) UpdateRights(ctx context.Context, projectID, userID
 	}
 
 	return m, nil
+}
+
+func (r *ProjectMembersRepo) GetProjectRights(
+	ctx context.Context,
+	projectID, userID string,
+) (models.ProjectRights, error) {
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	const query = `
+		select
+			manager_rights,
+			manager_member,
+			manager_projects,
+			manager_tasks
+		from project_members
+		where project_id = $1
+		  and user_id = $2;
+	`
+
+	var rights models.ProjectRights
+
+	err := qr.QueryRow(ctx, query, projectID, userID).Scan(
+		&rights.ManagerRights,
+		&rights.ManagerMember,
+		&rights.ManagerProjects,
+		&rights.ManagerTasks,
+	)
+	if err != nil {
+		return models.ProjectRights{}, fmt.Errorf("get project rights: %w", mapNoRows(err))
+	}
+
+	return rights, nil
+}
+
+func (r *ProjectMembersRepo) IsProjectMember(
+	ctx context.Context,
+	projectID, userID string,
+) (bool, error) {
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	const query = `
+		select exists (
+			select 1
+			from project_members
+			where project_id = $1
+			  and user_id = $2
+		);
+	`
+
+	var exists bool
+	if err := qr.QueryRow(ctx, query, projectID, userID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check project member exists: %w", err)
+	}
+
+	return exists, nil
 }

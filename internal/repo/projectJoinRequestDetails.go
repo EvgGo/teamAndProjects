@@ -207,7 +207,7 @@ func (r *ProjectJoinRequestDetailsRepo) ListProjectJoinRequestDetailsBase(
 	return items, nextPageToken, nil
 }
 
-func (r *ProjectJoinRequestDetailsRepo) GetProjectSkills(ctx context.Context, projectID string) ([]models.ProjectSkill, error) {
+func (r *ProjectJoinRequestDetailsRepo) GetProjectSkills(ctx context.Context, projectID string) ([]models.Skill, error) {
 
 	reqLog := r.log.With(
 		"repo_method", "GetProjectSkills",
@@ -241,19 +241,19 @@ func (r *ProjectJoinRequestDetailsRepo) GetProjectSkills(ctx context.Context, pr
 	}
 	defer rows.Close()
 
-	out := make([]models.ProjectSkill, 0, 8)
+	out := make([]models.Skill, 0, 8)
 
 	for rows.Next() {
-		var skillID int32
+		var skillID string
 		var skillName string
 
-		if err := rows.Scan(&skillID, &skillName); err != nil {
+		if err = rows.Scan(&skillID, &skillName); err != nil {
 			reqLog.Warn("не удалось прочитать skill проекта", "err", err)
 			return nil, err
 		}
 
-		out = append(out, models.ProjectSkill{
-			ID:   int(skillID),
+		out = append(out, models.Skill{
+			ID:   skillID,
 			Name: skillName,
 		})
 	}

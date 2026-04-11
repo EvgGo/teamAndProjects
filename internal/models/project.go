@@ -59,6 +59,7 @@ type ListProjectMembersFilter struct {
 type AddProjectMemberInput struct {
 	ProjectID string
 	UserID    string
+	JoinedAt  *time.Time
 	Rights    ProjectRights
 }
 
