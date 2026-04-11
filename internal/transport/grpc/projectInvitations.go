@@ -5,7 +5,11 @@ import (
 	workspacev1 "github.com/EvgGo/proto/proto/gen/go/teamAndProjects"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"strings"
+	"teamAndProjects/internal/authctx"
 	"teamAndProjects/internal/models"
+	"teamAndProjects/internal/repo"
+	"teamAndProjects/internal/services/svcerr"
 	"teamAndProjects/internal/transport/grpc/mapper"
 	"teamAndProjects/pkg/utils"
 )
@@ -302,4 +306,28 @@ func (s *ProjectsServer) ListMyInvitableProjects(
 	}
 
 	return resp, nil
+}
+
+func (s *ProjectsServer) GetMyProjectInvitationDetails(
+	ctx context.Context,
+	req *workspacev1.GetMyProjectInvitationDetailsRequest,
+) (*workspacev1.GetMyProjectInvitationDetailsResponse, error) {
+
+	actorID, ok := authctx.UserID(ctx)
+	if !ok {
+		return nil, svcerr.ToStatus(repo.ErrUnauthenticated)
+	}
+
+	item, err := s.svc.GetMyProjectInvitationDetails(
+		ctx,
+		actorID,
+		strings.TrimSpace(req.GetInvitationId()),
+	)
+	if err != nil {
+		return nil, svcerr.ToStatus(err)
+	}
+
+	return &workspacev1.GetMyProjectInvitationDetailsResponse{
+		Item: mapper.MyProjectInvitationDetailsToProto(item),
+	}, nil
 }

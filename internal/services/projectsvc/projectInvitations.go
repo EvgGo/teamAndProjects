@@ -407,6 +407,140 @@ func (s *Service) ListMyInvitableProjects(
 	return items, nextToken, nil
 }
 
+func (s *Service) GetMyProjectInvitationDetails(
+	ctx context.Context,
+	actorID string,
+	invitationID string,
+) (*models.MyProjectInvitationDetails, error) {
+
+	if actorID == "" {
+		return nil, svcerr.ErrInvalidActorID
+	}
+	if invitationID == "" {
+		return nil, svcerr.ErrInvalidInvitationID
+	}
+
+	invitation, err := s.Deps.ProjectInvitations.GetMyProjectInvitationByID(ctx, invitationID, actorID)
+	if err != nil {
+		if isNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get my project invitation by id: %w", err)
+	}
+
+	project, err := s.Deps.Projects.GetByID(ctx, invitation.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("get project by id: %w", err)
+	}
+
+	profilesResp, err := s.Deps.ViewerProfile.GetProfilesByIds(ctx, &authv1.GetProfilesByIdsRequest{
+		UserIds: []string{
+			actorID,
+			invitation.InvitedBy,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get profiles by ids: %w", err)
+	}
+
+	profileByID := make(map[string]*authv1.PublicUser, len(profilesResp.GetUsers()))
+	for _, profile := range profilesResp.GetUsers() {
+		profileByID[profile.GetId()] = profile
+	}
+
+	actorProfile, ok := profileByID[actorID]
+	if !ok {
+		return nil, fmt.Errorf("actor profile not found: %s", actorID)
+	}
+
+	invitedByProfile, ok := profileByID[invitation.InvitedBy]
+	if !ok {
+		return nil, fmt.Errorf("invited_by profile not found: %s", invitation.InvitedBy)
+	}
+
+	item := &models.MyProjectInvitationDetails{
+		Invitation: *invitation,
+		Project:    buildProjectInvitationProjectSummary(project),
+		InvitedByUser: models.UserPublicSummary{
+			UserID:    invitedByProfile.GetId(),
+			FirstName: invitedByProfile.GetFirstName(),
+			LastName:  invitedByProfile.GetLastName(),
+		},
+		SkillMatch: buildProjectSkillMatch(project.Skills, actorProfile.Skills),
+	}
+
+	return item, nil
+
+}
+
+func buildProjectInvitationProjectSummary(project models.Project) models.ProjectInvitationProjectSummary {
+
+	skills := make([]models.ProjectSkill, 0, len(project.Skills))
+	skills = append(skills, project.Skills...)
+
+	return models.ProjectInvitationProjectSummary{
+		ID:          project.ID,
+		Name:        project.Name,
+		Description: project.Description,
+		Status:      project.Status,
+		IsOpen:      project.IsOpen,
+		StartedAt:   project.StartedAt,
+		FinishedAt:  project.FinishedAt,
+		CreatedAt:   project.CreatedAt,
+		UpdatedAt:   project.UpdatedAt,
+		Skills:      skills,
+	}
+}
+
+func buildProjectSkillMatch(
+	projectSkills []models.ProjectSkill,
+	userSkills []*authv1.Skill,
+) models.SkillMatchSummary {
+
+	userSkillIDs := make(map[string]struct{}, len(userSkills))
+	for _, userSkill := range userSkills {
+		if userSkill == nil {
+			continue
+		}
+		userSkillIDs[userSkill.GetId()] = struct{}{}
+	}
+
+	matchedSkills := make([]models.Skill, 0, len(projectSkills))
+	missingProjectSkills := make([]models.Skill, 0, len(projectSkills))
+
+	for _, projectSkill := range projectSkills {
+
+		id := fmt.Sprintf("%d", projectSkill.ID)
+
+		skill := models.Skill{
+			ID:   id,
+			Name: projectSkill.Name,
+		}
+
+		if _, ok := userSkillIDs[id]; ok {
+			matchedSkills = append(matchedSkills, skill)
+			continue
+		}
+		missingProjectSkills = append(missingProjectSkills, skill)
+	}
+
+	totalProjectSkillsCount := len(projectSkills)
+	matchedSkillsCount := len(matchedSkills)
+
+	var matchPercent int32 = 100
+	if totalProjectSkillsCount > 0 {
+		matchPercent = int32((matchedSkillsCount * 100) / totalProjectSkillsCount)
+	}
+
+	return models.SkillMatchSummary{
+		MatchPercent:            matchPercent,
+		MatchedSkillsCount:      int32(matchedSkillsCount),
+		TotalProjectSkillsCount: int32(totalProjectSkillsCount),
+		MatchedSkills:           matchedSkills,
+		MissingProjectSkills:    missingProjectSkills,
+	}
+}
+
 func (s *Service) mustGetProject(ctx context.Context, projectID string) (models.Project, error) {
 	project, err := s.Deps.Projects.GetByID(ctx, projectID)
 	if err != nil {

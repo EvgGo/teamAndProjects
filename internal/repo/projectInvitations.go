@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -701,6 +702,71 @@ func (r *ProjectInvitationsRepo) ListMyInvitableProjects(
 	}
 
 	return items, nextToken, nil
+}
+
+func (r *ProjectInvitationsRepo) GetMyProjectInvitationByID(
+	ctx context.Context,
+	invitationID string,
+	invitedUserID string,
+) (*models.ProjectInvitation, error) {
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	const query = `
+		select
+			id,
+			project_id,
+			invited_user_id,
+			invited_by,
+			message,
+			status,
+			decided_by,
+			decided_at,
+			created_at,
+			decision_reason
+		from project_invitations
+		where id = $1
+		  and invited_user_id = $2
+		limit 1;
+		`
+
+	var invitation models.ProjectInvitation
+
+	var decidedBy sql.NullString
+	var decidedAt sql.NullTime
+	var decisionReason sql.NullString
+
+	err := qr.QueryRow(ctx, query, invitationID, invitedUserID).Scan(
+		&invitation.ID,
+		&invitation.ProjectID,
+		&invitation.InvitedUserID,
+		&invitation.InvitedBy,
+		&invitation.Message,
+		&invitation.Status,
+		&decidedBy,
+		&decidedAt,
+		&invitation.CreatedAt,
+		&decisionReason,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get my project invitation by id: %w", err)
+	}
+
+	if decidedBy.Valid {
+		invitation.DecidedBy = &decidedBy.String
+	}
+	if decidedAt.Valid {
+		decidedAtValue := decidedAt.Time
+		invitation.DecidedAt = &decidedAtValue
+	}
+	if decisionReason.Valid {
+		invitation.DecisionReason = &decisionReason.String
+	}
+
+	return &invitation, nil
 }
 
 func scanProjectInvitation(row interface{ Scan(dest ...any) error }) (models.ProjectInvitation, error) {

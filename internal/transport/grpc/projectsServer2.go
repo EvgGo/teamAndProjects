@@ -650,28 +650,6 @@ func (s *ProjectsServer) ListMyProjectJoinRequests(
 	return resp, nil
 }
 
-//func joinRequestStatusPtrFromProto(in workspacev1.JoinRequestStatus) (*models.JoinRequestStatus, error) {
-//	switch in {
-//	case workspacev1.JoinRequestStatus_JOIN_REQUEST_STATUS_UNSPECIFIED:
-//		return nil, nil
-//	case workspacev1.JoinRequestStatus_JOIN_REQUEST_STATUS_PENDING:
-//		v := models.JoinRequestStatusPending
-//		return &v, nil
-//	case workspacev1.JoinRequestStatus_JOIN_REQUEST_STATUS_APPROVED:
-//		v := models.JoinRequestStatusApproved
-//		return &v, nil
-//	case workspacev1.JoinRequestStatus_JOIN_REQUEST_STATUS_REJECTED:
-//		v := models.JoinRequestStatusRejected
-//		return &v, nil
-//	case workspacev1.JoinRequestStatus_JOIN_REQUEST_STATUS_CANCELLED:
-//		v := models.JoinRequestStatusCancelled
-//		return &v, nil
-//	default:
-//		return nil, fmt.Errorf("unknown join request status: %v", in)
-//	}
-//}
-//
-
 // RequestJoinProject создает заявку на вступление от текущего пользователя
 func (s *ProjectsServer) RequestJoinProject(ctx context.Context, req *workspacev1.RequestJoinProjectRequest) (*workspacev1.ProjectJoinRequest, error) {
 	jr, err := s.svc.RequestJoinProject(ctx, req.GetProjectId(), req.GetMessage())

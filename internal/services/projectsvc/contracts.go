@@ -91,6 +91,8 @@ type ProjectInvitationsRepo interface {
 
 	GetMyProjectInvitation(ctx context.Context, projectID, userID string) (*models.ProjectInvitation, error)
 
+	GetMyProjectInvitationByID(ctx context.Context, invitationID string, invitedUserID string) (*models.ProjectInvitation, error)
+
 	ListMyProjectInvitations(ctx context.Context, filter models.ListMyProjectInvitationsFilter) ([]models.MyProjectInvitationItem, string, error)
 
 	ListMyInvitableProjects(ctx context.Context, filter models.ListMyInvitableProjectsFilter) ([]models.InvitableProjectItem, string, error)
