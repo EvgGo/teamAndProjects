@@ -41,6 +41,8 @@ type ListPublicProjectsRepoParams struct {
 
 	SortBy    ProjectPublicSortBy
 	SortOrder SortOrder
+
+	ViewerID string
 }
 
 type PublicProjectRow struct {

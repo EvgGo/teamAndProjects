@@ -6,93 +6,16 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	authv1 "github.com/EvgGo/proto/proto/gen/go/sso"
-	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"log/slog"
 	"strings"
+	"teamAndProjects/pkg/utils"
 	"time"
 
 	"teamAndProjects/internal/authctx"
 	"teamAndProjects/internal/models"
 	"teamAndProjects/internal/repo"
 )
-
-type TxManager interface {
-	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
-}
-
-type ProjectMemberRepo interface {
-	GetMember(ctx context.Context, projectID, userID string) (models.ProjectMember, error)
-	AddMember(ctx context.Context, projectID, userID string, rights models.ProjectRights) (models.ProjectMember, error)
-	UpdateRights(ctx context.Context, projectID, userID string, rights models.ProjectRights) (models.ProjectMember, error)
-}
-
-type ProjectsRepo interface {
-	GetByID(ctx context.Context, projectID string) (models.Project, error)
-	DeleteProject(ctx context.Context, projectID string) error
-	Create(ctx context.Context, in models.CreateProjectInput) (models.Project, error)
-	Update(ctx context.Context, in models.UpdateProjectInput) (models.Project, error)
-	SetOpen(ctx context.Context, projectID string, isOpen bool) (models.Project, error)
-	ListProjects(ctx context.Context, filter *models.ProjectsFilter) ([]models.Project, string, error)
-}
-
-type ProjectJoinRequestsRepo interface {
-	Create(ctx context.Context, projectID, requesterID, message string) (models.ProjectJoinRequest, error)
-	GetForUpdate(ctx context.Context, requestID string) (models.ProjectJoinRequest, error)
-	UpdateStatus(ctx context.Context, requestID string, status models.JoinRequestStatus, decidedBy string, decidedAt time.Time) (models.ProjectJoinRequest, error)
-	CancelPendingByIDForRequester(ctx context.Context, requestID, requesterID string, at time.Time) (models.ProjectJoinRequest, error)
-	ListByProject(ctx context.Context, projectID string, status *models.JoinRequestStatus, pageSize int32, pageToken string) ([]models.ProjectJoinRequest, string, error)
-	ListManageableProjectJoinRequestBuckets(ctx context.Context, filter models.ListManageableProjectJoinRequestBucketsFilter) ([]models.ManageableProjectJoinRequestBucket, string, error)
-	ListMyProjectJoinRequests(ctx context.Context, filter models.ListMyProjectJoinRequestsFilter) ([]models.MyProjectJoinRequestItem, string, error)
-}
-
-type ProjectJoinRequestDetailsRepo interface {
-	CanManageProjectJoinRequests(ctx context.Context, projectID, viewerID string) (bool, error)
-
-	ListProjectJoinRequestDetailsBase(
-		ctx context.Context,
-		filter models.ListProjectJoinRequestDetailsRepoFilter,
-	) ([]models.ProjectJoinRequestDetailsBase, string, error)
-
-	GetProjectSkills(ctx context.Context, projectID string) ([]models.ProjectSkill, error)
-}
-
-type CandidateSummaryProvider interface {
-	GetCandidatePublicSummaries(
-		ctx context.Context,
-		userIDs []string,
-	) (map[string]models.CandidatePublicSummary, error)
-}
-
-type ProjectPublicRepo interface {
-	ListPublic(ctx context.Context, filter models.ListPublicProjectsRepoParams) ([]models.PublicProjectRow, string, error)
-}
-
-// TeamsRepo нужны для авто-создания команды в CreateProject
-type TeamsRepo interface {
-	Create(ctx context.Context, in models.CreateTeamInput) (models.Team, error)
-}
-
-type TeamMembersRepo interface {
-	EnsureMember(ctx context.Context, teamID, userID, duties string) error
-}
-
-type ViewerProfileClient interface {
-	GetMe(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*authv1.User, error)
-}
-
-// CreateProjectDBInput - внутренний input для repo.Create с team_id
-type CreateProjectDBInput struct {
-	TeamID      string
-	CreatorID   string
-	Name        string
-	Description string
-	Status      models.ProjectStatus
-	IsOpen      bool
-	StartedAt   time.Time
-	FinishedAt  *time.Time
-}
 
 type Deps struct {
 	Tx                       TxManager
@@ -105,6 +28,7 @@ type Deps struct {
 	Log                      *slog.Logger
 	Teams                    TeamsRepo
 	TeamMembers              TeamMembersRepo
+	ProjectInvitations       ProjectInvitationsRepo
 
 	ViewerProfile ViewerProfileClient
 
@@ -281,8 +205,14 @@ func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectPara
 		}
 		s.Deps.Log.Debug("CreateProject: проект создан", "projectID", p.ID, "caller", caller)
 
+		addMember := models.AddProjectMemberInput{
+			ProjectID: p.ID,
+			UserID:    caller,
+			Rights:    fullRights(),
+		}
+
 		// project_members full rights
-		_, err = s.Deps.Members.AddMember(txCtx, p.ID, caller, fullRights())
+		_, err = s.Deps.Members.AddMember(txCtx, addMember)
 		if err != nil {
 			if errors.Is(err, repo.ErrAlreadyExists) {
 				s.Deps.Log.Error("CreateProject: конфликт - участник уже существует", "projectID", p.ID, "caller", caller)
@@ -609,6 +539,7 @@ func (s *Service) ListPublicProjects(ctx context.Context, filter models.ListPubl
 		CanComputeMatch: canComputeProfileMatch,
 		SortBy:          effectiveSortBy,
 		SortOrder:       effectiveSortOrder,
+		ViewerID:        caller,
 	}
 
 	projects, nextToken, err := s.Deps.Public.ListPublic(ctx, repoParams)
@@ -765,8 +696,14 @@ func (s *Service) ApproveJoinRequest(ctx context.Context, requestID string, init
 			return repo.ErrForbidden
 		}
 
+		addMember := models.AddProjectMemberInput{
+			ProjectID: jr.ProjectID,
+			UserID:    jr.RequesterID,
+			Rights:    initialRights,
+		}
+
 		// добавляем в проект
-		_, err = s.Deps.Members.AddMember(txCtx, jr.ProjectID, jr.RequesterID, initialRights)
+		_, err = s.Deps.Members.AddMember(txCtx, addMember)
 		if err != nil {
 			if errors.Is(err, repo.ErrAlreadyExists) {
 				s.Deps.Log.Error("ApproveJoinRequest: конфликт - участник уже существует", "projectID", jr.ProjectID, "requesterID", jr.RequesterID)
@@ -992,12 +929,7 @@ func (s *Service) ListProjectJoinRequestDetails(
 		return nil, "", repo.ErrInvalidInput
 	}
 
-	if filter.PageSize <= 0 {
-		filter.PageSize = 20
-	}
-	if filter.PageSize > 100 {
-		filter.PageSize = 100
-	}
+	filter.PageSize = utils.NormalizePageSize(filter.PageSize, 10, 100)
 
 	canManage, err := s.Deps.JoinReqsDetails.CanManageProjectJoinRequests(ctx, filter.ProjectID, filter.ViewerID)
 	if err != nil {
@@ -1134,15 +1066,15 @@ func collectUniqueRequesterIDs(items []models.ProjectJoinRequestDetailsBase) []s
 }
 
 func BuildProjectSkillMatchSummary(
-	projectSkills []models.ProjectSkill,
-	candidateSkills []models.ProjectSkill,
+	projectSkills []models.Skill,
+	candidateSkills []models.Skill,
 ) models.SkillMatchSummary {
 
 	projectUnique := uniqueProjectSkillsByID(projectSkills)
-	candidateSet := make(map[int]struct{}, len(candidateSkills))
+	candidateSet := make(map[string]struct{}, len(candidateSkills))
 
 	for _, skill := range candidateSkills {
-		if skill.ID == 0 {
+		if skill.ID == "" {
 			continue
 		}
 		candidateSet[skill.ID] = struct{}{}
@@ -1154,13 +1086,13 @@ func BuildProjectSkillMatchSummary(
 			MatchPercent:            0,
 			MatchedSkillsCount:      0,
 			TotalProjectSkillsCount: 0,
-			MatchedSkills:           []models.ProjectSkill{},
-			MissingProjectSkills:    []models.ProjectSkill{},
+			MatchedSkills:           []models.Skill{},
+			MissingProjectSkills:    []models.Skill{},
 		}
 	}
 
-	matched := make([]models.ProjectSkill, 0, total)
-	missing := make([]models.ProjectSkill, 0, total)
+	matched := make([]models.Skill, 0, total)
+	missing := make([]models.Skill, 0, total)
 
 	for _, skill := range projectUnique {
 		if _, ok := candidateSet[skill.ID]; ok {
@@ -1180,26 +1112,4 @@ func BuildProjectSkillMatchSummary(
 		MatchedSkills:           matched,
 		MissingProjectSkills:    missing,
 	}
-}
-
-func uniqueProjectSkillsByID(skills []models.ProjectSkill) []models.ProjectSkill {
-	if len(skills) == 0 {
-		return nil
-	}
-
-	seen := make(map[int]struct{}, len(skills))
-	out := make([]models.ProjectSkill, 0, len(skills))
-
-	for _, skill := range skills {
-		if skill.ID == 0 {
-			continue
-		}
-		if _, ok := seen[skill.ID]; ok {
-			continue
-		}
-		seen[skill.ID] = struct{}{}
-		out = append(out, skill)
-	}
-
-	return out
 }

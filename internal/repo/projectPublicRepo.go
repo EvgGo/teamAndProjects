@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"teamAndProjects/internal/models"
+	"teamAndProjects/pkg/utils"
 	"time"
 )
 
@@ -31,17 +32,14 @@ func NewProjectPublicRepo(pool *pgxpool.Pool) *ProjectPublicRepo {
 	return &ProjectPublicRepo{pool: pool}
 }
 
-func (r *ProjectPublicRepo) ListPublic(ctx context.Context, params models.ListPublicProjectsRepoParams) ([]models.PublicProjectRow, string, error) {
+func (r *ProjectPublicRepo) ListPublic(
+	ctx context.Context,
+	params models.ListPublicProjectsRepoParams,
+) ([]models.PublicProjectRow, string, error) {
 
 	qr := querierFromCtx(ctx, r.pool)
 
-	pageSize := params.PageSize
-	if pageSize <= 0 {
-		pageSize = 10
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
+	pageSize := utils.NormalizePageSize(params.PageSize, 10, 100)
 
 	viewerSkillIDs, err := normalizeViewerSkillIDsForRepo(params.ViewerSkillIDs)
 	if err != nil {
@@ -52,13 +50,27 @@ func (r *ProjectPublicRepo) ListPublic(ctx context.Context, params models.ListPu
 	if err != nil {
 		return nil, "", err
 	}
-	if err := validatePublicProjectsCursor(cursor, params.SortBy, params.SortOrder); err != nil {
+	if err = validatePublicProjectsCursor(cursor, params.SortBy, params.SortOrder); err != nil {
 		return nil, "", err
 	}
 
 	baseWhere := []string{"p.is_open = true"}
-	args := make([]any, 0, 16)
+	args := make([]any, 0, 20)
 	n := 1
+
+	viewerID := strings.TrimSpace(params.ViewerID)
+	if viewerID != "" {
+		baseWhere = append(baseWhere, `
+			NOT EXISTS (
+				SELECT 1
+				FROM project_members pm
+				WHERE pm.project_id = p.id
+				  AND pm.user_id = $`+itoa(n)+`::uuid
+			)
+		`)
+		args = append(args, viewerID)
+		n++
+	}
 
 	if q := strings.TrimSpace(params.Query); q != "" {
 		baseWhere = append(baseWhere, "(p.name ILIKE $"+itoa(n)+" OR p.description ILIKE $"+itoa(n)+")")
@@ -110,7 +122,13 @@ func (r *ProjectPublicRepo) ListPublic(ctx context.Context, params models.ListPu
 
 	cursorWhere := ""
 	if cursor != nil {
-		cursorWhere, args, n, err = buildPublicProjectsCursorWhere(cursor, params.SortBy, params.SortOrder, args, n)
+		cursorWhere, args, n, err = buildPublicProjectsCursorWhere(
+			cursor,
+			params.SortBy,
+			params.SortOrder,
+			args,
+			n,
+		)
 		if err != nil {
 			return nil, "", err
 		}
