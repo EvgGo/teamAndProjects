@@ -239,16 +239,104 @@ func (s *Service) ListMyProjectInvitations(
 	actorID string,
 	filter models.ListMyProjectInvitationsFilter,
 ) ([]models.MyProjectInvitationItem, string, error) {
+
 	if actorID == "" {
 		return nil, "", svcerr.ErrInvalidActorID
 	}
 
 	filter.UserID = actorID
-	filter.PageSize = utils.NormalizePageSize(filter.PageSize, defaultInvitationPageSize, maxInvitationPageSize)
+	filter.PageSize = utils.NormalizePageSize(
+		filter.PageSize,
+		defaultInvitationPageSize,
+		maxInvitationPageSize,
+	)
 
 	items, nextToken, err := s.Deps.ProjectInvitations.ListMyProjectInvitations(ctx, filter)
 	if err != nil {
 		return nil, "", fmt.Errorf("list my project invitations: %w", err)
+	}
+	if len(items) == 0 {
+		return items, nextToken, nil
+	}
+
+	//  Собираем все user_id, которые нужны:
+	//  сам actor, чтобы взять его skills
+	//  invited_by для invited_by_user
+	userIDs := make([]string, 0, len(items)+1)
+	userIDs = append(userIDs, actorID)
+
+	for _, item := range items {
+		if item.Invitation.InvitedBy != "" {
+			userIDs = append(userIDs, item.Invitation.InvitedBy)
+		}
+	}
+
+	userIDs = utils.UniqueNonEmptyStrings(userIDs)
+
+	ctx = helpers.ForwardAuthorization(ctx)
+
+	profilesResp, err := s.Deps.ViewerProfile.GetProfilesByIds(ctx, &authv1.GetProfilesByIdsRequest{
+		UserIds: userIDs,
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("get profiles by ids for invitations list: %w", err)
+	}
+
+	profilesByID := make(map[string]*authv1.PublicUser, len(profilesResp.GetUsers()))
+	for _, user := range profilesResp.GetUsers() {
+		if user == nil || user.GetId() == "" {
+			continue
+		}
+		profilesByID[user.GetId()] = user
+	}
+
+	actorProfile := profilesByID[actorID]
+
+	// Кэшируем проекты, чтобы не дергать один и тот же проект несколько раз
+	projectsByID := make(map[string]models.Project, len(items))
+
+	for _, item := range items {
+		projectID := item.ProjectID
+		if projectID == "" {
+			projectID = item.Invitation.ProjectID
+		}
+		if projectID == "" {
+			return nil, "", svcerr.ErrInvalidProjectID
+		}
+
+		if _, ok := projectsByID[projectID]; ok {
+			continue
+		}
+
+		project, err := s.mustGetProject(ctx, projectID)
+		if err != nil {
+			return nil, "", fmt.Errorf("get project %s for invitations list: %w", projectID, err)
+		}
+
+		projectsByID[projectID] = project
+	}
+
+	// Обогащаем item
+	for i := range items {
+		projectID := items[i].ProjectID
+		if projectID == "" {
+			projectID = items[i].Invitation.ProjectID
+		}
+
+		if inviterProfile, ok := profilesByID[items[i].Invitation.InvitedBy]; ok {
+			items[i].InvitedByUser = &models.UserPublicSummary{
+				UserID:    inviterProfile.GetId(),
+				FirstName: inviterProfile.GetFirstName(),
+				LastName:  inviterProfile.GetLastName(),
+			}
+		}
+
+		project, ok := projectsByID[projectID]
+		if !ok {
+			return nil, "", fmt.Errorf("project %s not found in local cache", projectID)
+		}
+
+		items[i].SkillMatch = buildProjectSkillMatch(project.Skills, actorProfile.GetSkills())
 	}
 
 	return items, nextToken, nil
@@ -432,6 +520,8 @@ func (s *Service) GetMyProjectInvitationDetails(
 	if err != nil {
 		return nil, fmt.Errorf("get project by id: %w", err)
 	}
+
+	ctx = helpers.ForwardAuthorization(ctx)
 
 	profilesResp, err := s.Deps.ViewerProfile.GetProfilesByIds(ctx, &authv1.GetProfilesByIdsRequest{
 		UserIds: []string{

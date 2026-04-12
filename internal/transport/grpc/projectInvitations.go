@@ -194,12 +194,16 @@ func (s *ProjectsServer) ListMyProjectInvitations(
 		return nil, err
 	}
 
-	items, nextToken, err := s.svc.ListMyProjectInvitations(ctx, viewerID, models.ListMyProjectInvitationsFilter{
-		UserID:    viewerID,
-		Status:    mapper.ProjectInvitationStatusFromProto(req.Status),
-		PageSize:  utils.NormalizePageSize(req.PageSize, 10, 100),
-		PageToken: req.PageToken,
-	})
+	items, nextToken, err := s.svc.ListMyProjectInvitations(
+		ctx,
+		viewerID,
+		models.ListMyProjectInvitationsFilter{
+			UserID:    viewerID,
+			Status:    mapper.ProjectInvitationStatusFromProto(req.Status),
+			PageSize:  utils.NormalizePageSize(req.PageSize, 10, 100),
+			PageToken: req.PageToken,
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

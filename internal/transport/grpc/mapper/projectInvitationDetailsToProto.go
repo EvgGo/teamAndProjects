@@ -32,11 +32,20 @@ func ProjectInvitationDetailsToProto(m models.ProjectInvitationDetails) *workspa
 }
 
 func MyProjectInvitationItemToProto(m models.MyProjectInvitationItem) *workspacev1.MyProjectInvitationItem {
+
+	var invitedByUser *workspacev1.UserPublicSummary
+
+	if m.InvitedByUser != nil {
+		invitedByUser = UserPublicSummaryToProto(*m.InvitedByUser)
+	}
+
 	return &workspacev1.MyProjectInvitationItem{
 		ProjectId:     m.ProjectID,
 		ProjectName:   m.ProjectName,
 		ProjectStatus: ProjectStatusFromModel(m.ProjectStatus),
 		ProjectIsOpen: m.ProjectIsOpen,
 		Invitation:    ProjectInvitationToProto(m.Invitation),
+		InvitedByUser: invitedByUser,
+		SkillMatch:    SkillMatchSummaryToProto(m.SkillMatch),
 	}
 }

@@ -47,6 +47,8 @@ type MyProjectInvitationItem struct {
 	ProjectStatus ProjectStatus
 	ProjectIsOpen bool
 	Invitation    ProjectInvitation
+	InvitedByUser *UserPublicSummary
+	SkillMatch    SkillMatchSummary
 }
 
 type InvitableProjectItem struct {
