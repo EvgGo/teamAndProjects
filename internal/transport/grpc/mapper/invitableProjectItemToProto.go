@@ -11,6 +11,6 @@ func InvitableProjectItemToProto(m models.InvitableProjectItem) *workspacev1.Inv
 		ProjectName:   m.ProjectName,
 		ProjectStatus: ProjectStatusFromModel(m.ProjectStatus),
 		IsOpen:        m.IsOpen,
-		MyRights:      projectRightsToProto(m.MyRights),
+		MyRights:      ProjectRightsToProto(m.MyRights),
 	}
 }

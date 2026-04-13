@@ -89,6 +89,7 @@ func (s *ProjectsServer) GetProject(ctx context.Context, req *workspacev1.GetPro
 	if err != nil {
 		return nil, svcerr.ToStatus(err)
 	}
+	utils.PrintReadable(project)
 	return mapper.ProjectToProto(project), nil
 }
 
@@ -581,6 +582,35 @@ func (s *ProjectsServer) UpdateProjectMemberRights(ctx context.Context, req *wor
 		ProjectId: updatedMember.ProjectID,
 		UserId:    updatedMember.UserID,
 		Rights:    mapper.ProjectMemberRightsToProto(updatedMember.Rights),
+	}, nil
+}
+
+func (s *ProjectsServer) ListProjectMemberDetails(
+	ctx context.Context,
+	req *workspacev1.ListProjectMemberDetailsRequest,
+) (*workspacev1.ListProjectMemberDetailsResponse, error) {
+
+	result, err := s.svc.ListProjectMemberDetails(
+		ctx,
+		req.GetProjectId(),
+		req.GetPageSize(),
+		req.GetPageToken(),
+	)
+	if err != nil {
+		s.log.Error("ну удалось получить детали по участникам проекта", "error", err.Error())
+		return nil, svcerr.ToStatus(err)
+	}
+
+	members := make([]*workspacev1.ProjectMemberDetails, 0, len(result.Members))
+	for _, member := range result.Members {
+		members = append(members, mapper.ProjectMemberDetailsToProto(member))
+	}
+
+	return &workspacev1.ListProjectMemberDetailsResponse{
+		Members:              members,
+		NextPageToken:        result.NextPageToken,
+		MyRights:             mapper.ProjectRightsToProto(result.MyRights),
+		CanManageTeamMembers: result.CanManageTeamMembers,
 	}, nil
 }
 

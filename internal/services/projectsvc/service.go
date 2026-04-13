@@ -105,34 +105,52 @@ func (s *Service) GetProject(ctx context.Context, projectID string) (models.Proj
 		s.Deps.Log.Warn("GetProject: неаутентифицированный вызов", "projectID", projectID)
 		return models.Project{}, repo.ErrUnauthenticated
 	}
+
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return models.Project{}, repo.ErrInvalidInput
+	}
+
 	s.Deps.Log.Info("GetProject: запрос", "projectID", projectID, "caller", caller)
 
-	p, err := s.Deps.Projects.GetByID(ctx, projectID)
+	project, err := s.Deps.Projects.GetByID(ctx, projectID)
 	if err != nil {
 		s.Deps.Log.Error("GetProject: ошибка получения проекта", "projectID", projectID, "error", err)
 		return models.Project{}, err
 	}
 
-	s.Deps.Log.Info("GetProject: проект открыт", "projectID", projectID, "Project", p)
-
-	if p.IsOpen {
-		s.Deps.Log.Info("GetProject: проект открыт, доступ разрешен", "projectID", projectID, "caller", caller)
-		return p, nil
-	}
-
-	s.Deps.Log.Debug("GetProject: проект закрыт, проверка членства", "projectID", projectID, "caller", caller)
-	_, err = s.Deps.ProjectMembers.GetMember(ctx, projectID, caller)
+	member, err := s.Deps.ProjectMembers.GetMember(ctx, projectID, caller)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
-			s.Deps.Log.Warn("GetProject: доступ запрещeн - пользователь не участник закрытого проекта", "projectID", projectID, "caller", caller)
-			return models.Project{}, repo.ErrForbidden
+			if !project.IsOpen {
+				s.Deps.Log.Warn(
+					"GetProject: доступ запрещён - пользователь не участник закрытого проекта",
+					"projectID", projectID,
+					"caller", caller,
+				)
+				return models.Project{}, repo.ErrForbidden
+			}
+
+			// Открытый проект доступен любому авторизованному пользователю,
+			// но если пользователь не участник, его права false
+			project.MyRights = models.ProjectRights{}
+			return project, nil
 		}
-		s.Deps.Log.Error("GetProject: ошибка проверки членства", "projectID", projectID, "caller", caller, "error", err)
+
+		s.Deps.Log.Error(
+			"GetProject: ошибка проверки членства",
+			"projectID", projectID,
+			"caller", caller,
+			"error", err,
+		)
 		return models.Project{}, err
 	}
 
+	project.MyRights = member.Rights
+
 	s.Deps.Log.Info("GetProject: проект успешно получен", "projectID", projectID, "caller", caller)
-	return p, nil
+
+	return project, nil
 }
 
 // CreateProject - без team_id: сервис сам создает команду и права

@@ -27,12 +27,17 @@ func (r *ProjectsRepo) GetByID(ctx context.Context, projectID string) (models.Pr
 
 func (r *ProjectsRepo) getByIDFrom(ctx context.Context, qr Querier, projectID string) (models.Project, error) {
 
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return models.Project{}, ErrInvalidInput
+	}
+
 	pid, err := parseUUID(projectID)
 	if err != nil {
 		return models.Project{}, err
 	}
 
-	const q = `
+	const query = `
 		SELECT
 			id::text,
 			team_id::text,
@@ -49,41 +54,43 @@ func (r *ProjectsRepo) getByIDFrom(ctx context.Context, qr Querier, projectID st
 		WHERE id = $1
 	`
 
-	var p models.Project
-	var fin sql.NullTime
-	var started time.Time
+	var project models.Project
+	var finishedAt sql.NullTime
+	var startedAt time.Time
 
-	err = qr.QueryRow(ctx, q, pid).Scan(
-		&p.ID,
-		&p.TeamID,
-		&p.CreatorID,
-		&p.Name,
-		&p.Description,
-		&p.Status,
-		&p.IsOpen,
-		&started,
-		&fin,
-		&p.CreatedAt,
-		&p.UpdatedAt,
+	err = qr.QueryRow(ctx, query, pid).Scan(
+		&project.ID,
+		&project.TeamID,
+		&project.CreatorID,
+		&project.Name,
+		&project.Description,
+		&project.Status,
+		&project.IsOpen,
+		&startedAt,
+		&finishedAt,
+		&project.CreatedAt,
+		&project.UpdatedAt,
 	)
 	if err != nil {
 		return models.Project{}, mapDBErr(err)
 	}
 
-	p.StartedAt = dateOnlyUTC(started)
-	if fin.Valid {
-		p.FinishedAt = ptrDateUTC(fin.Time)
+	project.StartedAt = dateOnlyUTC(startedAt)
+
+	if finishedAt.Valid {
+		project.FinishedAt = ptrDateUTC(finishedAt.Time)
 	}
 
-	skillIDs, skills, err := r.getProjectSkills(ctx, qr, p.ID)
+	skillIDs, skills, err := r.getProjectSkills(ctx, qr, project.ID)
 	if err != nil {
 		return models.Project{}, err
 	}
 
-	p.SkillIDs = skillIDs
-	p.Skills = skills
+	project.SkillIDs = skillIDs
+	project.Skills = skills
+	project.MyRights = models.ProjectRights{}
 
-	return p, nil
+	return project, nil
 }
 
 func (r *ProjectsRepo) DeleteProject(ctx context.Context, projectID string) error {

@@ -255,7 +255,7 @@ func (r *ProjectMembersRepo) ListMembers(ctx context.Context, params models.List
 			manager_tasks
 		from project_members
 		where project_id = $1
-		  and ($2 = '' or user_id > $2)
+		  and (nullif($2, '') is null or user_id > nullif($2, '')::uuid)
 		order by user_id asc
 		limit $3
 	`
@@ -309,6 +309,8 @@ func (r *ProjectMembersRepo) ListProjectMemberDetails(
 	filter models.ListProjectMemberDetailsFilter,
 ) ([]models.ProjectMemberDetailsRow, string, error) {
 
+	utils.PrintReadable(filter.ProjectID)
+
 	qr := querierFromCtx(ctx, r.pool)
 
 	pageSize := utils.NormalizePageSize(filter.PageSize, 10, 100)
@@ -319,31 +321,34 @@ func (r *ProjectMembersRepo) ListProjectMemberDetails(
 	}
 
 	const query = `
-		select
-			pm.project_id,
-			pm.user_id,
-			pm.manager_rights,
-			pm.manager_member,
-			pm.manager_projects,
-			pm.manager_tasks,
-
-			(tm.user_id is not null) as is_team_member,
-			nullif(tm.duties, '') as team_duties,
-
-			(pm.user_id = p.creator_id) as is_project_creator,
-			(pm.user_id = t.founder_id) as is_team_founder,
-			(coalesce(t.lead_id, '') <> '' and pm.user_id = t.lead_id) as is_team_lead
-		from project_members pm
-		join projects p on p.id = pm.project_id
-		join teams t on t.id = p.team_id
-		left join team_members tm
-			on tm.team_id = p.team_id
-		   and tm.user_id = pm.user_id
-		where pm.project_id = $1
-		  and ($2 = '' or pm.user_id > $2)
-		order by pm.user_id asc
-		limit $3
-	`
+			select
+				pm.project_id,
+				pm.user_id,
+				pm.manager_rights,
+				pm.manager_member,
+				pm.manager_projects,
+				pm.manager_tasks,
+		
+				(tm.user_id is not null) as is_team_member,
+				nullif(tm.duties, '') as team_duties,
+		
+				(pm.user_id = p.creator_id) as is_project_creator,
+				(pm.user_id = t.founder_id) as is_team_founder,
+				(coalesce(t.lead_id::text, '') <> '' and pm.user_id = t.lead_id) as is_team_lead
+			from project_members pm
+			join projects p on p.id = pm.project_id
+			join teams t on t.id = p.team_id
+			left join team_members tm
+				on tm.team_id = p.team_id
+			   and tm.user_id = pm.user_id
+			where pm.project_id = $1::uuid
+			  and (
+				nullif($2::text, '') is null
+				or pm.user_id > nullif($2::text, '')::uuid
+			  )
+			order by pm.user_id asc
+			limit $3
+		`
 
 	rows, err := qr.Query(ctx, query, filter.ProjectID, cursor.LastUserID, pageSize+1)
 	if err != nil {

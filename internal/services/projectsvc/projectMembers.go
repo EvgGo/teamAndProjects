@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"teamAndProjects/internal/authctx"
+	"teamAndProjects/internal/helpers"
 	"teamAndProjects/internal/models"
 	"teamAndProjects/internal/repo"
 	"teamAndProjects/internal/services/svcerr"
@@ -334,6 +335,8 @@ func (s *Service) ListProjectMemberDetails(
 	}
 
 	userIDs := collectProjectMemberUserIDs(rows)
+
+	ctx = helpers.ForwardAuthorization(ctx)
 
 	profilesByID, err := s.getProfilesMap(ctx, userIDs)
 	if err != nil {

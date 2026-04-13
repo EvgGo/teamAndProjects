@@ -30,6 +30,8 @@ type Project struct {
 	UpdatedAt time.Time
 	SkillIDs  []int
 	Skills    []ProjectSkill
+
+	MyRights ProjectRights
 }
 
 type ProjectSkill struct {

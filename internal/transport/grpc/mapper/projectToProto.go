@@ -36,5 +36,6 @@ func ProjectToProto(p models.Project) *workspacev1.Project {
 		UpdatedAt:   DateFromTime(p.UpdatedAt),
 		SkillIds:    skillIDs,
 		Skills:      skills,
+		MyRights:    ProjectRightsToProto(p.MyRights),
 	}
 }
