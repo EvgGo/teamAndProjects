@@ -20,7 +20,7 @@ import (
 type Deps struct {
 	Tx                       TxManager
 	Projects                 ProjectsRepo
-	Members                  ProjectMemberRepo
+	ProjectMembers           ProjectMemberRepo
 	JoinReqs                 ProjectJoinRequestsRepo
 	JoinReqsDetails          ProjectJoinRequestDetailsRepo
 	CandidateSummaryProvider CandidateSummaryProvider
@@ -46,7 +46,7 @@ func New(deps Deps) *Service {
 	if deps.Projects == nil {
 		panic("projectsvc: deps.Projects is nil")
 	}
-	if deps.Members == nil {
+	if deps.ProjectMembers == nil {
 		panic("projectsvc: deps.Members is nil")
 	}
 	if deps.JoinReqs == nil {
@@ -121,7 +121,7 @@ func (s *Service) GetProject(ctx context.Context, projectID string) (models.Proj
 	}
 
 	s.Deps.Log.Debug("GetProject: проект закрыт, проверка членства", "projectID", projectID, "caller", caller)
-	_, err = s.Deps.Members.GetMember(ctx, projectID, caller)
+	_, err = s.Deps.ProjectMembers.GetMember(ctx, projectID, caller)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			s.Deps.Log.Warn("GetProject: доступ запрещeн - пользователь не участник закрытого проекта", "projectID", projectID, "caller", caller)
@@ -212,7 +212,7 @@ func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectPara
 		}
 
 		// project_members full rights
-		_, err = s.Deps.Members.AddMember(txCtx, addMember)
+		_, err = s.Deps.ProjectMembers.AddMember(txCtx, addMember)
 		if err != nil {
 			if errors.Is(err, repo.ErrAlreadyExists) {
 				s.Deps.Log.Error("CreateProject: конфликт - участник уже существует", "projectID", p.ID, "caller", caller)
@@ -336,7 +336,7 @@ func (s *Service) UpdateProject(ctx context.Context, in models.UpdateProjectInpu
 		"skillsCount", len(in.SkillIDs),
 	)
 
-	m, err := s.Deps.Members.GetMember(ctx, in.ProjectID, caller)
+	m, err := s.Deps.ProjectMembers.GetMember(ctx, in.ProjectID, caller)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			s.Deps.Log.Warn("UpdateProject: доступ запрещен - пользователь не участник", "projectID", in.ProjectID, "caller", caller)
@@ -421,7 +421,7 @@ func (s *Service) SetOpen(ctx context.Context, projectID string, isOpen bool) (m
 	}
 	s.Deps.Log.Info("SetOpen: запрос", "projectID", projectID, "caller", caller, "isOpen", isOpen)
 
-	m, err := s.Deps.Members.GetMember(ctx, projectID, caller)
+	m, err := s.Deps.ProjectMembers.GetMember(ctx, projectID, caller)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			s.Deps.Log.Warn("SetOpen: доступ запрещeн - пользователь не участник", "projectID", projectID, "caller", caller)
@@ -442,44 +442,6 @@ func (s *Service) SetOpen(ctx context.Context, projectID string, isOpen bool) (m
 	}
 	s.Deps.Log.Info("SetOpen: статус открытости изменeн", "projectID", projectID, "caller", caller, "isOpen", isOpen)
 	return p, nil
-}
-
-// UpdateProjectMemberRights - только manager_rights (super-manager)
-func (s *Service) UpdateProjectMemberRights(ctx context.Context, projectID, targetUserID string, rights models.ProjectRights) (models.ProjectMember, error) {
-
-	caller := authctx.MustUserID(ctx)
-	if caller == "" {
-		s.Deps.Log.Warn("UpdateProjectMemberRights: неаутентифицированный вызов", "projectID", projectID, "targetUserID", targetUserID)
-		return models.ProjectMember{}, repo.ErrUnauthenticated
-	}
-	s.Deps.Log.Info("UpdateProjectMemberRights: запрос", "projectID", projectID, "caller", caller, "targetUserID", targetUserID, "rights", rights)
-
-	self, err := s.Deps.Members.GetMember(ctx, projectID, caller)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			s.Deps.Log.Warn("UpdateProjectMemberRights: доступ запрещeн - пользователь не участник", "projectID", projectID, "caller", caller)
-			return models.ProjectMember{}, repo.ErrForbidden
-		}
-		s.Deps.Log.Error("UpdateProjectMemberRights: ошибка получения участника", "projectID", projectID, "caller", caller, "error", err)
-		return models.ProjectMember{}, err
-	}
-	if !self.Rights.ManagerRights {
-		s.Deps.Log.Warn("UpdateProjectMemberRights: доступ запрещeн - нет ManagerRights", "projectID", projectID, "caller", caller)
-		return models.ProjectMember{}, repo.ErrForbidden
-	}
-
-	if caller == targetUserID && !rights.ManagerRights {
-		s.Deps.Log.Warn("UpdateProjectMemberRights: попытка снять себе ManagerRights", "projectID", projectID, "caller", caller)
-		return models.ProjectMember{}, repo.ErrConflict
-	}
-
-	updated, err := s.Deps.Members.UpdateRights(ctx, projectID, targetUserID, rights)
-	if err != nil {
-		s.Deps.Log.Error("UpdateProjectMemberRights: ошибка обновления прав", "projectID", projectID, "caller", caller, "targetUserID", targetUserID, "error", err)
-		return models.ProjectMember{}, err
-	}
-	s.Deps.Log.Info("UpdateProjectMemberRights: права обновлены", "projectID", projectID, "caller", caller, "targetUserID", targetUserID)
-	return updated, nil
 }
 
 func (s *Service) ListPublicProjects(ctx context.Context, filter models.ListPublicProjectsFilter) ([]models.PublicProjectRow, string, error) {
@@ -592,7 +554,7 @@ func (s *Service) RequestJoinProject(ctx context.Context, projectID, message str
 		return models.ProjectJoinRequest{}, repo.ErrConflict
 	}
 
-	if _, err = s.Deps.Members.GetMember(ctx, projectID, caller); err == nil {
+	if _, err = s.Deps.ProjectMembers.GetMember(ctx, projectID, caller); err == nil {
 		s.Deps.Log.Warn("RequestJoinProject: пользователь уже участник", "projectID", projectID, "caller", caller)
 		return models.ProjectJoinRequest{}, repo.ErrConflict
 	} else if !errors.Is(err, repo.ErrNotFound) {
@@ -634,7 +596,7 @@ func (s *Service) ListProjectJoinRequests(ctx context.Context, projectID string,
 	}
 	s.Deps.Log.Info("ListProjectJoinRequests: запрос", "projectID", projectID, "caller", caller, "status", status, "pageSize", pageSize, "pageToken", pageToken)
 
-	m, err := s.Deps.Members.GetMember(ctx, projectID, caller)
+	m, err := s.Deps.ProjectMembers.GetMember(ctx, projectID, caller)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			s.Deps.Log.Warn("ListProjectJoinRequests: доступ запрещeн - пользователь не участник", "projectID", projectID, "caller", caller)
@@ -682,7 +644,7 @@ func (s *Service) ApproveJoinRequest(ctx context.Context, requestID string, init
 			return repo.ErrConflict
 		}
 
-		m, err := s.Deps.Members.GetMember(txCtx, jr.ProjectID, caller)
+		m, err := s.Deps.ProjectMembers.GetMember(txCtx, jr.ProjectID, caller)
 		if err != nil {
 			if errors.Is(err, repo.ErrNotFound) {
 				s.Deps.Log.Warn("ApproveJoinRequest: доступ запрещeн - approving user не участник", "projectID", jr.ProjectID, "caller", caller)
@@ -703,7 +665,7 @@ func (s *Service) ApproveJoinRequest(ctx context.Context, requestID string, init
 		}
 
 		// добавляем в проект
-		_, err = s.Deps.Members.AddMember(txCtx, addMember)
+		_, err = s.Deps.ProjectMembers.AddMember(txCtx, addMember)
 		if err != nil {
 			if errors.Is(err, repo.ErrAlreadyExists) {
 				s.Deps.Log.Error("ApproveJoinRequest: конфликт - участник уже существует", "projectID", jr.ProjectID, "requesterID", jr.RequesterID)
@@ -770,7 +732,7 @@ func (s *Service) RejectJoinRequest(ctx context.Context, requestID string) (mode
 			return repo.ErrConflict
 		}
 
-		m, err := s.Deps.Members.GetMember(txCtx, jr.ProjectID, caller)
+		m, err := s.Deps.ProjectMembers.GetMember(txCtx, jr.ProjectID, caller)
 		if err != nil {
 			if errors.Is(err, repo.ErrNotFound) {
 				s.Deps.Log.Warn("RejectJoinRequest: доступ запрещeн - rejecting user не участник", "projectID", jr.ProjectID, "caller", caller)

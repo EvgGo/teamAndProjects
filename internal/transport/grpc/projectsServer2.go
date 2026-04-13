@@ -397,8 +397,9 @@ func (s *ProjectsServer) SetProjectOpen(ctx context.Context, req *workspacev1.Se
 	return mapper.ProjectToProto(project), nil
 }
 
-// ListProjectMembers возвращает список участников проекта.
+//// ListProjectMembers возвращает список участников проекта.
 //func (s *ProjectsServer) ListProjectMembers(ctx context.Context, req *workspacev1.ListProjectMembersRequest) (*workspacev1.ListProjectMembersResponse, error) {
+//
 //	members, next, err := s.svc.ListProjectMembers(ctx, req.GetProjectId(), req.GetPageSize(), req.GetPageToken())
 //	if err != nil {
 //		return nil, svcerr.ToStatus(err)
@@ -416,8 +417,8 @@ func (s *ProjectsServer) SetProjectOpen(ctx context.Context, req *workspacev1.Se
 //		NextPageToken: next,
 //	}, nil
 //}
-
-// AddProjectMember добавляет участника в проект (требует прав manager_member / manager_rights).
+//
+//// AddProjectMember добавляет участника в проект (требует прав manager_member / manager_rights).
 //func (s *ProjectsServer) AddProjectMember(ctx context.Context, req *workspacev1.AddProjectMemberRequest) (*workspacev1.ProjectMember, error) {
 //	rights := ProjectMemberRightsFromProto(req.GetRights())
 //	member, err := s.svc.AddProjectMember(ctx, req.GetProjectId(), req.GetUserId(), rights)
@@ -430,8 +431,8 @@ func (s *ProjectsServer) SetProjectOpen(ctx context.Context, req *workspacev1.Se
 //		Rights:    projectMemberRightsToProto(member.Rights),
 //	}, nil
 //}
-
-// RemoveProjectMember удаляет участника из проекта
+//
+//// RemoveProjectMember удаляет участника из проекта
 //func (s *ProjectsServer) RemoveProjectMember(ctx context.Context, req *workspacev1.RemoveProjectMemberRequest) (*emptypb.Empty, error) {
 //	err := s.svc.RemoveProjectMember(ctx, req.GetProjectId(), req.GetUserId())
 //	if err != nil {
@@ -439,10 +440,10 @@ func (s *ProjectsServer) SetProjectOpen(ctx context.Context, req *workspacev1.Se
 //	}
 //	return &emptypb.Empty{}, nil
 //}
-
-// UpdateProjectMemberRights обновляет права участника (частичный патч).
-// Поскольку бизнес-логика заменяет права целиком, мы сначала получаем текущие права,
-// применяем изменения из запроса, затем вызываем UpdateProjectMemberRights.
+//
+//// UpdateProjectMemberRights обновляет права участника (частичный патч).
+//// Поскольку бизнес-логика заменяет права целиком, мы сначала получаем текущие права,
+//// применяем изменения из запроса, затем вызываем UpdateProjectMemberRights.
 //func (s *ProjectsServer) UpdateProjectMemberRights(ctx context.Context, req *workspacev1.UpdateProjectMemberRightsRequest) (*workspacev1.ProjectMember, error) {
 //	// Получаем текущие права участника
 //	member, err := s.svc.GetProjectMember(ctx, req.GetProjectId(), req.GetUserId())
@@ -476,6 +477,112 @@ func (s *ProjectsServer) SetProjectOpen(ctx context.Context, req *workspacev1.Se
 //		Rights:    projectMemberRightsToProto(updated.Rights),
 //	}, nil
 //}
+
+// ListProjectMembers возвращает список участников проекта
+func (s *ProjectsServer) ListProjectMembers(ctx context.Context, req *workspacev1.ListProjectMembersRequest) (*workspacev1.ListProjectMembersResponse, error) {
+
+	members, nextPageToken, err := s.svc.ListProjectMembers(
+		ctx,
+		req.GetProjectId(),
+		req.GetPageSize(),
+		req.GetPageToken(),
+	)
+	if err != nil {
+		return nil, svcerr.ToStatus(err)
+	}
+
+	out := make([]*workspacev1.ProjectMember, 0, len(members))
+	for _, member := range members {
+		out = append(out, &workspacev1.ProjectMember{
+			ProjectId: member.ProjectID,
+			UserId:    member.UserID,
+			Rights:    mapper.ProjectMemberRightsToProto(member.Rights),
+		})
+	}
+
+	return &workspacev1.ListProjectMembersResponse{
+		Members:       out,
+		NextPageToken: nextPageToken,
+	}, nil
+}
+
+// AddProjectMember добавляет участника в проект
+func (s *ProjectsServer) AddProjectMember(ctx context.Context, req *workspacev1.AddProjectMemberRequest) (*workspacev1.ProjectMember, error) {
+
+	rights := mapper.ProjectMemberRightsFromProto(req.GetRights())
+
+	member, err := s.svc.AddProjectMember(
+		ctx,
+		req.GetProjectId(),
+		req.GetUserId(),
+		rights,
+	)
+	if err != nil {
+		return nil, svcerr.ToStatus(err)
+	}
+
+	return &workspacev1.ProjectMember{
+		ProjectId: member.ProjectID,
+		UserId:    member.UserID,
+		Rights:    mapper.ProjectMemberRightsToProto(member.Rights),
+	}, nil
+}
+
+// RemoveProjectMember удаляет участника из проекта
+func (s *ProjectsServer) RemoveProjectMember(ctx context.Context, req *workspacev1.RemoveProjectMemberRequest) (*emptypb.Empty, error) {
+
+	err := s.svc.RemoveProjectMember(
+		ctx,
+		req.GetProjectId(),
+		req.GetUserId(),
+		req.GetRemoveFromTeam(),
+	)
+	if err != nil {
+		return nil, svcerr.ToStatus(err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// UpdateProjectMemberRights обновляет права участника
+func (s *ProjectsServer) UpdateProjectMemberRights(ctx context.Context, req *workspacev1.UpdateProjectMemberRightsRequest) (*workspacev1.ProjectMember, error) {
+
+	member, err := s.svc.GetProjectMember(ctx, req.GetProjectId(), req.GetUserId())
+	if err != nil {
+		return nil, svcerr.ToStatus(err)
+	}
+
+	currentRights := member.Rights
+
+	if req.ManagerRights != nil {
+		currentRights.ManagerRights = req.GetManagerRights()
+	}
+	if req.ManagerMember != nil {
+		currentRights.ManagerMember = req.GetManagerMember()
+	}
+	if req.ManagerProjects != nil {
+		currentRights.ManagerProjects = req.GetManagerProjects()
+	}
+	if req.ManagerTasks != nil {
+		currentRights.ManagerTasks = req.GetManagerTasks()
+	}
+
+	updatedMember, err := s.svc.UpdateProjectMemberRights(
+		ctx,
+		req.GetProjectId(),
+		req.GetUserId(),
+		currentRights,
+	)
+	if err != nil {
+		return nil, svcerr.ToStatus(err)
+	}
+
+	return &workspacev1.ProjectMember{
+		ProjectId: updatedMember.ProjectID,
+		UserId:    updatedMember.UserID,
+		Rights:    mapper.ProjectMemberRightsToProto(updatedMember.Rights),
+	}, nil
+}
 
 func (s *ProjectsServer) ListManageableProjectJoinRequestBuckets(
 	ctx context.Context,

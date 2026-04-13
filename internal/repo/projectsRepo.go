@@ -284,6 +284,30 @@ func (r *ProjectsRepo) ListProjects(ctx context.Context, filter *models.Projects
 	return projects, nextToken, nil
 }
 
+func (r *ProjectsRepo) HasUserCreatedProjectsInTeam(
+	ctx context.Context,
+	teamID string,
+	userID string,
+) (bool, error) {
+	qr := querierFromCtx(ctx, r.pool)
+
+	const query = `
+		select exists(
+			select 1
+			from projects
+			where team_id = $1
+			  and creator_id = $2
+		)
+	`
+
+	var exists bool
+	if err := qr.QueryRow(ctx, query, teamID, userID).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check created projects in team: %w", err)
+	}
+
+	return exists, nil
+}
+
 func (r *ProjectsRepo) getProjectSkillIDs(ctx context.Context, qr Querier, projectID string) ([]int, error) {
 
 	const q = `

@@ -12,4 +12,5 @@ var (
 	ErrInternal               = errors.New("internal error")
 	ErrProjectNotFound        = errors.New("project not found")
 	ErrProjectDeleteForbidden = errors.New("only project creator can delete project")
+	ErrInvalidCursor          = errors.New("invalid cursor")
 )

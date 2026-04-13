@@ -395,7 +395,7 @@ func (s *Service) AcceptProjectInvitation(
 		}
 
 		// Подстрой под свой реальный input type / сигнатуру repo.
-		_, err = s.Deps.Members.AddMember(txCtx, models.AddProjectMemberInput{
+		_, err = s.Deps.ProjectMembers.AddMember(txCtx, models.AddProjectMemberInput{
 			ProjectID: inv.ProjectID,
 			UserID:    actorID,
 			JoinedAt:  &now,
@@ -669,7 +669,7 @@ func (s *Service) mustBePublicUser(ctx context.Context, userID string) error {
 
 func (s *Service) mustManageProjectMembers(ctx context.Context, projectID string, actorID string) error {
 
-	rights, err := s.Deps.Members.GetProjectRights(ctx, projectID, actorID)
+	rights, err := s.Deps.ProjectMembers.GetProjectRights(ctx, projectID, actorID)
 	if err != nil {
 		if isNotFound(err) {
 			return svcerr.ErrManageProjectMembersForbidden
@@ -686,7 +686,7 @@ func (s *Service) mustManageProjectMembers(ctx context.Context, projectID string
 
 func (s *Service) ensureNotProjectMember(ctx context.Context, projectID string, userID string) error {
 
-	ok, err := s.Deps.Members.IsProjectMember(ctx, projectID, userID)
+	ok, err := s.Deps.ProjectMembers.IsProjectMember(ctx, projectID, userID)
 	if err != nil {
 		return fmt.Errorf("check project member existence: %w", err)
 	}

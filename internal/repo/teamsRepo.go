@@ -3,9 +3,11 @@ package repo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/jackc/pgx/v5"
 	"strconv"
 	"strings"
+	"teamAndProjects/pkg/utils"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -93,11 +95,11 @@ func (r *TeamsRepo) Create(ctx context.Context, in models.CreateTeamInput) (mode
 	return t, nil
 }
 
-func (r *TeamsRepo) GetByID(ctx context.Context, teamID string) (models.Team, error) {
+func (r *TeamsRepo) GetByID(ctx context.Context, teamID string) (*models.Team, error) {
 
 	teamID = strings.TrimSpace(teamID)
 	if teamID == "" {
-		return models.Team{}, ErrInvalidInput
+		return nil, ErrInvalidInput
 	}
 
 	qr := querierFromCtx(ctx, r.pool)
@@ -131,12 +133,12 @@ func (r *TeamsRepo) GetByID(ctx context.Context, teamID string) (models.Team, er
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return models.Team{}, ErrNotFound
+			return nil, ErrNotFound
 		}
-		return models.Team{}, mapPgErr(err)
+		return nil, mapPgErr(err)
 	}
 
-	return out, nil
+	return &out, nil
 }
 
 func (r *TeamsRepo) Update(ctx context.Context, in models.UpdateTeamInput) (models.Team, error) {
@@ -264,13 +266,7 @@ func (r *TeamsRepo) List(ctx context.Context, filter models.ListTeamsFilter) ([]
 
 	qr := querierFromCtx(ctx, r.pool)
 
-	pageSize := filter.PageSize
-	if pageSize <= 0 {
-		pageSize = 20
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
+	pageSize := utils.NormalizePageSize(filter.PageSize, 10, 100)
 
 	curT, curID, err := DecodeCursor(strings.TrimSpace(filter.PageToken))
 	if err != nil {
@@ -352,7 +348,7 @@ func (r *TeamsRepo) List(ctx context.Context, filter models.ListTeamsFilter) ([]
 		}
 		items = append(items, item)
 	}
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, "", mapPgErr(err)
 	}
 
@@ -364,6 +360,27 @@ func (r *TeamsRepo) List(ctx context.Context, filter models.ListTeamsFilter) ([]
 	}
 
 	return items, next, nil
+}
+
+func (r *TeamMembersRepo) RemoveTeamMember(ctx context.Context, teamID, userID string) error {
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	const query = `
+		delete from team_members
+		where team_id = $1
+		  and user_id = $2
+	`
+
+	tag, err := qr.Exec(ctx, query, teamID, userID)
+	if err != nil {
+		return fmt.Errorf("delete team member: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
 }
 
 func mapPgErr(err error) error {

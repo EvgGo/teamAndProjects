@@ -17,6 +17,10 @@ type ProjectMemberRepo interface {
 	GetMember(ctx context.Context, projectID, userID string) (models.ProjectMember, error)
 	AddMember(ctx context.Context, input models.AddProjectMemberInput) (models.ProjectMember, error)
 	UpdateRights(ctx context.Context, projectID, userID string, rights models.ProjectRights) (models.ProjectMember, error)
+	ListMembers(ctx context.Context, params models.ListProjectMembersParams) ([]models.ProjectMember, string, error)
+	RemoveMember(ctx context.Context, projectID, userID string) error
+	RemoveMemberFromAllTeamProjects(ctx context.Context, teamID, userID string) (int64, error)
+	ListProjectMemberDetails(ctx context.Context, filter models.ListProjectMemberDetailsFilter) ([]models.ProjectMemberDetailsRow, string, error)
 
 	GetProjectRights(ctx context.Context, projectID, userID string) (models.ProjectRights, error)
 	IsProjectMember(ctx context.Context, projectID, userID string) (bool, error)
@@ -29,6 +33,7 @@ type ProjectsRepo interface {
 	Update(ctx context.Context, in models.UpdateProjectInput) (models.Project, error)
 	SetOpen(ctx context.Context, projectID string, isOpen bool) (models.Project, error)
 	ListProjects(ctx context.Context, filter *models.ProjectsFilter) ([]models.Project, string, error)
+	HasUserCreatedProjectsInTeam(ctx context.Context, teamID, userID string) (bool, error)
 }
 
 type ProjectJoinRequestsRepo interface {
@@ -67,10 +72,15 @@ type ProjectPublicRepo interface {
 // TeamsRepo нужны для авто-создания команды в CreateProject
 type TeamsRepo interface {
 	Create(ctx context.Context, in models.CreateTeamInput) (models.Team, error)
+	GetByID(ctx context.Context, teamID string) (*models.Team, error)
+	Update(ctx context.Context, in models.UpdateTeamInput) (models.Team, error)
+	Delete(ctx context.Context, teamID string) error
+	List(ctx context.Context, filter models.ListTeamsFilter) ([]models.Team, string, error)
 }
 
 type TeamMembersRepo interface {
 	EnsureMember(ctx context.Context, teamID, userID, duties string) error
+	RemoveTeamMember(ctx context.Context, teamID, userID string) error
 }
 
 type ViewerProfileClient interface {

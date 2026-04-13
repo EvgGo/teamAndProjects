@@ -2,8 +2,12 @@ package repo
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"strings"
+	"teamAndProjects/pkg/utils"
 
 	"teamAndProjects/internal/models"
 )
@@ -229,4 +233,217 @@ func (r *ProjectMembersRepo) IsProjectMember(
 	}
 
 	return exists, nil
+}
+
+func (r *ProjectMembersRepo) ListMembers(ctx context.Context, params models.ListProjectMembersParams) ([]models.ProjectMember, string, error) {
+	qr := querierFromCtx(ctx, r.pool)
+
+	pageSize := utils.NormalizePageSize(params.PageSize, 10, 100)
+
+	cursor, err := decodeProjectMembersCursor(strings.TrimSpace(params.PageToken))
+	if err != nil {
+		return nil, "", err
+	}
+
+	const query = `
+		select
+			project_id,
+			user_id,
+			manager_rights,
+			manager_member,
+			manager_projects,
+			manager_tasks
+		from project_members
+		where project_id = $1
+		  and ($2 = '' or user_id > $2)
+		order by user_id asc
+		limit $3
+	`
+
+	rows, err := qr.Query(ctx, query, params.ProjectID, cursor.LastUserID, pageSize+1)
+	if err != nil {
+		return nil, "", fmt.Errorf("query project members: %w", err)
+	}
+	defer rows.Close()
+
+	members := make([]models.ProjectMember, 0, pageSize+1)
+
+	for rows.Next() {
+		var member models.ProjectMember
+
+		if err = rows.Scan(
+			&member.ProjectID,
+			&member.UserID,
+			&member.Rights.ManagerRights,
+			&member.Rights.ManagerMember,
+			&member.Rights.ManagerProjects,
+			&member.Rights.ManagerTasks,
+		); err != nil {
+			return nil, "", fmt.Errorf("scan project member: %w", err)
+		}
+
+		members = append(members, member)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, "", fmt.Errorf("iterate project members: %w", err)
+	}
+
+	var nextPageToken string
+	if len(members) > int(pageSize) {
+		lastVisible := members[pageSize-1]
+		nextPageToken, err = encodeProjectMembersCursor(projectMembersCursor{
+			LastUserID: lastVisible.UserID,
+		})
+		if err != nil {
+			return nil, "", err
+		}
+
+		members = members[:pageSize]
+	}
+
+	return members, nextPageToken, nil
+}
+
+func (r *ProjectMembersRepo) ListProjectMemberDetails(
+	ctx context.Context,
+	filter models.ListProjectMemberDetailsFilter,
+) ([]models.ProjectMemberDetailsRow, string, error) {
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	pageSize := utils.NormalizePageSize(filter.PageSize, 10, 100)
+
+	cursor, err := decodeProjectMembersCursor(filter.PageToken)
+	if err != nil {
+		return nil, "", err
+	}
+
+	const query = `
+		select
+			pm.project_id,
+			pm.user_id,
+			pm.manager_rights,
+			pm.manager_member,
+			pm.manager_projects,
+			pm.manager_tasks,
+
+			(tm.user_id is not null) as is_team_member,
+			nullif(tm.duties, '') as team_duties,
+
+			(pm.user_id = p.creator_id) as is_project_creator,
+			(pm.user_id = t.founder_id) as is_team_founder,
+			(coalesce(t.lead_id, '') <> '' and pm.user_id = t.lead_id) as is_team_lead
+		from project_members pm
+		join projects p on p.id = pm.project_id
+		join teams t on t.id = p.team_id
+		left join team_members tm
+			on tm.team_id = p.team_id
+		   and tm.user_id = pm.user_id
+		where pm.project_id = $1
+		  and ($2 = '' or pm.user_id > $2)
+		order by pm.user_id asc
+		limit $3
+	`
+
+	rows, err := qr.Query(ctx, query, filter.ProjectID, cursor.LastUserID, pageSize+1)
+	if err != nil {
+		return nil, "", fmt.Errorf("query project member details: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]models.ProjectMemberDetailsRow, 0, pageSize+1)
+
+	for rows.Next() {
+		var item models.ProjectMemberDetailsRow
+
+		if err = rows.Scan(
+			&item.ProjectID,
+			&item.UserID,
+			&item.Rights.ManagerRights,
+			&item.Rights.ManagerMember,
+			&item.Rights.ManagerProjects,
+			&item.Rights.ManagerTasks,
+			&item.IsTeamMember,
+			&item.TeamDuties,
+			&item.IsProjectCreator,
+			&item.IsTeamFounder,
+			&item.IsTeamLead,
+		); err != nil {
+			return nil, "", fmt.Errorf("scan project member details: %w", err)
+		}
+
+		items = append(items, item)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, "", fmt.Errorf("iterate project member details: %w", err)
+	}
+
+	var nextPageToken string
+	if len(items) > int(pageSize) {
+		lastVisible := items[pageSize-1]
+
+		nextPageToken, err = encodeProjectMembersCursor(projectMembersCursor{
+			LastUserID: lastVisible.UserID,
+		})
+		if err != nil {
+			return nil, "", err
+		}
+
+		items = items[:pageSize]
+	}
+
+	return items, nextPageToken, nil
+}
+
+func (r *ProjectMembersRepo) RemoveMemberFromAllTeamProjects(
+	ctx context.Context,
+	teamID string,
+	userID string,
+) (int64, error) {
+	qr := querierFromCtx(ctx, r.pool)
+
+	const query = `
+		delete from project_members pm
+		using projects p
+		where p.id = pm.project_id
+		  and p.team_id = $1
+		  and pm.user_id = $2
+	`
+
+	tag, err := qr.Exec(ctx, query, teamID, userID)
+	if err != nil {
+		return 0, fmt.Errorf("delete member from all team projects: %w", err)
+	}
+
+	return tag.RowsAffected(), nil
+}
+
+type projectMembersCursor struct {
+	LastUserID string `json:"last_user_id"`
+}
+
+func encodeProjectMembersCursor(cursor projectMembersCursor) (string, error) {
+	raw, err := json.Marshal(cursor)
+	if err != nil {
+		return "", fmt.Errorf("marshal project members cursor: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func decodeProjectMembersCursor(token string) (projectMembersCursor, error) {
+	if token == "" {
+		return projectMembersCursor{}, nil
+	}
+
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return projectMembersCursor{}, ErrInvalidCursor
+	}
+
+	var cursor projectMembersCursor
+	if err = json.Unmarshal(raw, &cursor); err != nil {
+		return projectMembersCursor{}, ErrInvalidCursor
+	}
+
+	return cursor, nil
 }

@@ -91,7 +91,7 @@ func (s *TeamsServer) GetTeam(ctx context.Context, req *workspacev1.GetTeamReque
 
 	reqLog.Debug("команда успешно получена", "team_id", team.ID)
 
-	return mapper.TeamToProto(&team), nil
+	return mapper.TeamToProto(team), nil
 }
 
 func (s *TeamsServer) UpdateTeam(ctx context.Context, req *workspacev1.UpdateTeamRequest) (*workspacev1.Team, error) {

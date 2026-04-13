@@ -105,7 +105,7 @@ func (s *service) CreateTeam(ctx context.Context, in models.CreateTeamInput) (mo
 	return created, nil
 }
 
-func (s *service) GetTeam(ctx context.Context, teamID string) (models.Team, error) {
+func (s *service) GetTeam(ctx context.Context, teamID string) (*models.Team, error) {
 
 	teamID = strings.TrimSpace(teamID)
 
@@ -113,7 +113,7 @@ func (s *service) GetTeam(ctx context.Context, teamID string) (models.Team, erro
 
 	if teamID == "" {
 		s.log.Debug("teamsvc.GetTeam: invalid input, empty team_id")
-		return models.Team{}, repo.ErrInvalidInput
+		return nil, repo.ErrInvalidInput
 	}
 
 	team, err := s.teams.GetByID(ctx, teamID)
@@ -122,7 +122,7 @@ func (s *service) GetTeam(ctx context.Context, teamID string) (models.Team, erro
 			"team_id", teamID,
 			"err", err,
 		)
-		return models.Team{}, err
+		return nil, err
 	}
 
 	s.log.Debug("teamsvc.GetTeam: success", "team_id", team.ID)

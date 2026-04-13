@@ -13,7 +13,7 @@ type TxManager interface {
 
 type TeamsRepo interface {
 	Create(ctx context.Context, in models.CreateTeamInput) (models.Team, error)
-	GetByID(ctx context.Context, teamID string) (models.Team, error)
+	GetByID(ctx context.Context, teamID string) (*models.Team, error)
 	Update(ctx context.Context, in models.UpdateTeamInput) (models.Team, error)
 	Delete(ctx context.Context, teamID string) error
 	List(ctx context.Context, filter models.ListTeamsFilter) ([]models.Team, string, error)
@@ -29,7 +29,7 @@ type TeamMembersRepo interface {
 
 type Service interface {
 	CreateTeam(ctx context.Context, in models.CreateTeamInput) (models.Team, error)
-	GetTeam(ctx context.Context, teamID string) (models.Team, error)
+	GetTeam(ctx context.Context, teamID string) (*models.Team, error)
 	UpdateTeam(ctx context.Context, in models.UpdateTeamInput) (models.Team, error)
 	DeleteTeam(ctx context.Context, teamID string) error
 	ListTeams(ctx context.Context, filter models.ListTeamsFilter) ([]models.Team, string, error)

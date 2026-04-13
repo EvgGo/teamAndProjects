@@ -171,7 +171,7 @@ func New(
 	projectsService := projectsvc.New(projectsvc.Deps{
 		Tx:                       tx,
 		Projects:                 projectsRepo,
-		Members:                  projectMembersRepo,
+		ProjectMembers:           projectMembersRepo,
 		JoinReqs:                 joinReqRepo,
 		JoinReqsDetails:          joinReqsDetailsRepo,
 		CandidateSummaryProvider: candidateSummaryProvider,
