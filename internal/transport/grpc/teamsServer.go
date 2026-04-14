@@ -379,6 +379,74 @@ func (s *TeamsServer) UpdateTeamMemberRights(
 	return mapper.TeamMemberToProto(member), nil
 }
 
+func (s *TeamsServer) AssignTeamMemberToProject(
+	ctx context.Context,
+	req *workspacev1.AssignTeamMemberToProjectRequest,
+) (*workspacev1.ProjectMember, error) {
+
+	actorID, ok := authctx.UserID(ctx)
+	if !ok || strings.TrimSpace(actorID) == "" {
+		return nil, svcerr.ToStatus(svcerr.ErrUnauthenticated)
+	}
+
+	member, err := s.svc.AssignTeamMemberToProject(ctx, actorID, models.AssignTeamMemberToProjectParams{
+		TeamID:        req.GetTeamId(),
+		ProjectID:     req.GetProjectId(),
+		UserID:        req.GetUserId(),
+		InitialRights: mapper.ProjectMemberRightsFromProto(req.GetInitialRights()),
+	})
+	if err != nil {
+		return nil, svcerr.ToStatus(err)
+	}
+
+	return mapper.ProjectMemberToProto(member), nil
+}
+
+func (s *TeamsServer) ListTeamProjectsForAssignment(
+	ctx context.Context,
+	req *workspacev1.ListTeamProjectsForAssignmentRequest,
+) (*workspacev1.ListTeamProjectsForAssignmentResponse, error) {
+
+	actorID, ok := authctx.UserID(ctx)
+	if !ok || strings.TrimSpace(actorID) == "" {
+		return nil, svcerr.ToStatus(svcerr.ErrUnauthenticated)
+	}
+
+	result, err := s.svc.ListTeamProjectsForAssignment(ctx, actorID, models.ListTeamProjectsForAssignmentParams{
+		TeamID:    req.GetTeamId(),
+		UserID:    req.GetUserId(),
+		Query:     req.GetQuery(),
+		PageSize:  req.GetPageSize(),
+		PageToken: req.GetPageToken(),
+	})
+	if err != nil {
+		return nil, svcerr.ToStatus(err)
+	}
+
+	items := make([]*workspacev1.TeamProjectAssignmentItem, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, teamProjectAssignmentItemToProto(item))
+	}
+
+	return &workspacev1.ListTeamProjectsForAssignmentResponse{
+		Items:         items,
+		NextPageToken: result.NextPageToken,
+	}, nil
+}
+
+func teamProjectAssignmentItemToProto(
+	item models.TeamProjectAssignmentItem,
+) *workspacev1.TeamProjectAssignmentItem {
+	return &workspacev1.TeamProjectAssignmentItem{
+		ProjectId:       item.ProjectID,
+		ProjectName:     item.ProjectName,
+		ProjectStatus:   mapper.ProjectStatusToProto(item.ProjectStatus),
+		IsOpen:          item.IsOpen,
+		IsAlreadyMember: item.IsAlreadyMember,
+		CurrentRights:   mapper.ProjectRightsToProto(item.CurrentRights),
+	}
+}
+
 func viewerIDFromContext(ctx context.Context) (string, error) {
 	userID, ok := authctx.UserID(ctx)
 	if !ok {

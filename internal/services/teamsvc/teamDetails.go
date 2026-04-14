@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	ssov1 "github.com/EvgGo/proto/proto/gen/go/sso"
-	"sort"
 	"strings"
 	"teamAndProjects/internal/models"
 	"teamAndProjects/internal/services/svcerr"
@@ -283,6 +282,7 @@ type teamMemberDetailsCursor struct {
 }
 
 func decodeTeamMemberDetailsCursor(token string) (int, error) {
+
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return 0, nil
@@ -313,8 +313,8 @@ func encodeTeamMemberDetailsCursor(offset int) string {
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
-func sortSkills(skills []models.SkillSummary) {
-	sort.SliceStable(skills, func(i, j int) bool {
-		return strings.ToLower(skills[i].Name) < strings.ToLower(skills[j].Name)
-	})
-}
+//func sortSkills(skills []models.SkillSummary) {
+//	sort.SliceStable(skills, func(i, j int) bool {
+//		return strings.ToLower(skills[i].Name) < strings.ToLower(skills[j].Name)
+//	})
+//}

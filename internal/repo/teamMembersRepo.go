@@ -2,12 +2,15 @@ package repo
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
 	"strconv"
 	"strings"
 	"teamAndProjects/internal/models"
+	"teamAndProjects/pkg/utils"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -498,4 +501,267 @@ func (r *TeamMembersRepo) UpdateTeamMemberRights(
 	}
 
 	return &member, nil
+}
+
+func (r *TeamMembersRepo) AssignTeamMemberToProject(
+	ctx context.Context,
+	params models.AssignTeamMemberToProjectParams,
+) (*models.ProjectMember, error) {
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	var projectExists bool
+	var targetIsTeamMember bool
+	var alreadyMember bool
+
+	const guardQuery = `
+		select
+			exists(
+				select 1
+				from projects
+				where id = $2::uuid
+				  and team_id = $1::uuid
+			) as project_exists,
+
+			exists(
+				select 1
+				from team_members
+				where team_id = $1::uuid
+				  and user_id = $3::uuid
+			) as target_is_team_member,
+
+			exists(
+				select 1
+				from project_members
+				where project_id = $2::uuid
+				  and user_id = $3::uuid
+			) as already_member
+	`
+
+	err := qr.QueryRow(ctx, guardQuery, params.TeamID, params.ProjectID, params.UserID).Scan(
+		&projectExists,
+		&targetIsTeamMember,
+		&alreadyMember,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query assign team member guard: %w", err)
+	}
+
+	if !projectExists || !targetIsTeamMember {
+		return nil, ErrNotFound
+	}
+
+	if alreadyMember {
+		return nil, ErrConflict
+	}
+
+	const insertQuery = `
+		insert into project_members (
+			project_id,
+			user_id,
+			manager_rights,
+			manager_member,
+			manager_projects,
+			manager_tasks
+		)
+		values (
+			$1::uuid,
+			$2::uuid,
+			$3,
+			$4,
+			$5,
+			$6
+		)
+		returning
+			project_id::text,
+			user_id::text,
+			manager_rights,
+			manager_member,
+			manager_projects,
+			manager_tasks
+	`
+
+	var member models.ProjectMember
+
+	err = qr.QueryRow(
+		ctx,
+		insertQuery,
+		params.ProjectID,
+		params.UserID,
+		params.InitialRights.ManagerRights,
+		params.InitialRights.ManagerMember,
+		params.InitialRights.ManagerProjects,
+		params.InitialRights.ManagerTasks,
+	).Scan(
+		&member.ProjectID,
+		&member.UserID,
+		&member.Rights.ManagerRights,
+		&member.Rights.ManagerMember,
+		&member.Rights.ManagerProjects,
+		&member.Rights.ManagerTasks,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("insert project member: %w", err)
+	}
+
+	return &member, nil
+}
+
+func (r *TeamMembersRepo) ListTeamProjectsForAssignment(
+	ctx context.Context,
+	params models.ListTeamProjectsForAssignmentParams,
+) ([]models.TeamProjectAssignmentItem, string, error) {
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	pageSize := utils.NormalizePageSize(params.PageSize, 10, 100)
+
+	offset, err := decodeTeamAssignmentCursor(params.PageToken)
+	if err != nil {
+		return nil, "", err
+	}
+
+	queryText := strings.TrimSpace(params.Query)
+
+	const query = `
+		select
+			p.id::text,
+			p.name,
+			p.status,
+			p.is_open,
+
+			(pm.user_id is not null) as is_already_member,
+			coalesce(pm.manager_rights, false),
+			coalesce(pm.manager_member, false),
+			coalesce(pm.manager_projects, false),
+			coalesce(pm.manager_tasks, false)
+		from projects p
+		left join project_members pm
+			on pm.project_id = p.id
+		   and pm.user_id = $2::uuid
+		where p.team_id = $1::uuid
+		  and (
+			$3 = ''
+			or p.name ilike '%' || $3 || '%'
+			or p.description ilike '%' || $3 || '%'
+		  )
+		order by p.created_at desc, p.id desc
+		limit $4
+		offset $5
+	`
+
+	rows, err := qr.Query(
+		ctx,
+		query,
+		params.TeamID,
+		params.UserID,
+		queryText,
+		pageSize+1,
+		offset,
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("query team projects for assignment: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]models.TeamProjectAssignmentItem, 0, pageSize+1)
+
+	for rows.Next() {
+		var item models.TeamProjectAssignmentItem
+
+		err = rows.Scan(
+			&item.ProjectID,
+			&item.ProjectName,
+			&item.ProjectStatus,
+			&item.IsOpen,
+			&item.IsAlreadyMember,
+			&item.CurrentRights.ManagerRights,
+			&item.CurrentRights.ManagerMember,
+			&item.CurrentRights.ManagerProjects,
+			&item.CurrentRights.ManagerTasks,
+		)
+		if err != nil {
+			return nil, "", fmt.Errorf("scan team project assignment item: %w", err)
+		}
+
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, "", fmt.Errorf("iterate team project assignment items: %w", err)
+	}
+
+	nextPageToken := ""
+	if len(items) > int(pageSize) {
+		items = items[:pageSize]
+		nextPageToken = encodeTeamAssignmentCursor(offset + int(pageSize))
+	}
+
+	return items, nextPageToken, nil
+}
+
+func (r *TeamMembersRepo) EnsureTeamMemberExists(
+	ctx context.Context,
+	teamID string,
+	userID string,
+) error {
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	const query = `
+		select 1
+		from team_members
+		where team_id = $1::uuid
+		  and user_id = $2::uuid
+	`
+
+	var exists int
+
+	err := qr.QueryRow(ctx, query, teamID, userID).Scan(&exists)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+
+		return fmt.Errorf("query team member exists: %w", err)
+	}
+
+	return nil
+}
+
+type teamAssignmentCursor struct {
+	Offset int `json:"offset"`
+}
+
+func decodeTeamAssignmentCursor(token string) (int, error) {
+
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return 0, nil
+	}
+
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return 0, fmt.Errorf("%w: invalid page_token", ErrInvalidInput)
+	}
+
+	var cursor teamAssignmentCursor
+	if err = json.Unmarshal(raw, &cursor); err != nil {
+		return 0, fmt.Errorf("%w: invalid page_token", ErrInvalidInput)
+	}
+
+	if cursor.Offset < 0 {
+		return 0, fmt.Errorf("%w: invalid page_token", ErrInvalidInput)
+	}
+
+	return cursor.Offset, nil
+}
+
+func encodeTeamAssignmentCursor(offset int) string {
+
+	raw, _ := json.Marshal(teamAssignmentCursor{
+		Offset: offset,
+	})
+
+	return base64.RawURLEncoding.EncodeToString(raw)
 }

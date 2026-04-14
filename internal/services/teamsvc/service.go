@@ -501,3 +501,92 @@ func (s *service) UpdateTeamMemberRights(
 
 	return member, nil
 }
+
+func (s *service) AssignTeamMemberToProject(
+	ctx context.Context,
+	actorID string,
+	params models.AssignTeamMemberToProjectParams,
+) (*models.ProjectMember, error) {
+	actorID = strings.TrimSpace(actorID)
+	params.TeamID = strings.TrimSpace(params.TeamID)
+	params.ProjectID = strings.TrimSpace(params.ProjectID)
+	params.UserID = strings.TrimSpace(params.UserID)
+
+	if actorID == "" {
+		return nil, svcerr.ErrInvalidActorID
+	}
+	if params.TeamID == "" {
+		return nil, svcerr.ErrInvalidTeamID
+	}
+	if params.ProjectID == "" {
+		return nil, svcerr.ErrInvalidProjectID
+	}
+	if params.UserID == "" {
+		return nil, svcerr.ErrInvalidUserID
+	}
+
+	access, err := s.members.GetTeamAccess(ctx, params.TeamID, actorID)
+	if err != nil {
+		return nil, fmt.Errorf("get team access: %w", err)
+	}
+
+	if !access.MyRights.RootRights && !access.MyRights.ManagerProjectAssignment {
+		return nil, svcerr.ErrAssignTeamMemberToProjectForbidden
+	}
+
+	if err = s.members.EnsureTeamMemberExists(ctx, params.TeamID, params.UserID); err != nil {
+		return nil, fmt.Errorf("ensure target team member exists: %w", err)
+	}
+
+	member, err := s.members.AssignTeamMemberToProject(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("assign team member to project: %w", err)
+	}
+
+	return member, nil
+}
+
+func (s *service) ListTeamProjectsForAssignment(
+	ctx context.Context,
+	actorID string,
+	params models.ListTeamProjectsForAssignmentParams,
+) (*models.ListTeamProjectsForAssignmentResult, error) {
+
+	actorID = strings.TrimSpace(actorID)
+	params.TeamID = strings.TrimSpace(params.TeamID)
+	params.UserID = strings.TrimSpace(params.UserID)
+	params.Query = strings.TrimSpace(params.Query)
+
+	if actorID == "" {
+		return nil, svcerr.ErrInvalidActorID
+	}
+	if params.TeamID == "" {
+		return nil, svcerr.ErrInvalidTeamID
+	}
+	if params.UserID == "" {
+		return nil, svcerr.ErrInvalidUserID
+	}
+
+	access, err := s.members.GetTeamAccess(ctx, params.TeamID, actorID)
+	if err != nil {
+		return nil, fmt.Errorf("get team access: %w", err)
+	}
+
+	if !access.MyRights.RootRights && !access.MyRights.ManagerProjectAssignment {
+		return nil, svcerr.ErrAssignTeamMemberToProjectForbidden
+	}
+
+	if err = s.members.EnsureTeamMemberExists(ctx, params.TeamID, params.UserID); err != nil {
+		return nil, fmt.Errorf("ensure target team member exists: %w", err)
+	}
+
+	items, nextPageToken, err := s.members.ListTeamProjectsForAssignment(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("list team projects for assignment: %w", err)
+	}
+
+	return &models.ListTeamProjectsForAssignmentResult{
+		Items:         items,
+		NextPageToken: nextPageToken,
+	}, nil
+}

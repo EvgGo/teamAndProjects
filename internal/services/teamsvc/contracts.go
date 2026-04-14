@@ -28,6 +28,9 @@ type TeamMembersRepo interface {
 	GetTeamAccess(ctx context.Context, teamID string, actorID string) (*models.TeamAccessRow, error)
 	UpdateTeamMemberDuties(ctx context.Context, in models.UpdateTeamMemberInput) (*models.TeamMember, error)
 	UpdateTeamMemberRights(ctx context.Context, params models.UpdateTeamMemberRightsParams) (*models.TeamMember, error)
+	AssignTeamMemberToProject(ctx context.Context, params models.AssignTeamMemberToProjectParams) (*models.ProjectMember, error)
+	ListTeamProjectsForAssignment(ctx context.Context, params models.ListTeamProjectsForAssignmentParams) ([]models.TeamProjectAssignmentItem, string, error)
+	EnsureTeamMemberExists(ctx context.Context, teamID string, userID string) error
 }
 
 type TeamMemberDetailsRepository interface {
@@ -50,6 +53,8 @@ type Service interface {
 	ListTeamMemberDetails(ctx context.Context, actorID string, params models.ListTeamMemberDetailsParams) (*models.ListTeamMemberDetailsResult, error)
 	UpdateTeamMemberDuties(ctx context.Context, actorID string, in models.UpdateTeamMemberInput) (*models.TeamMember, error)
 	UpdateTeamMemberRights(ctx context.Context, actorID string, params models.UpdateTeamMemberRightsParams) (*models.TeamMember, error)
+	ListTeamProjectsForAssignment(ctx context.Context, actorID string, params models.ListTeamProjectsForAssignmentParams) (*models.ListTeamProjectsForAssignmentResult, error)
+	AssignTeamMemberToProject(ctx context.Context, actorID string, params models.AssignTeamMemberToProjectParams) (*models.ProjectMember, error)
 }
 
 type Deps struct {
