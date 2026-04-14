@@ -2,19 +2,17 @@ package grpc
 
 import (
 	"context"
-	"log/slog"
-	"strings"
-	"teamAndProjects/internal/services/svcerr"
-	"teamAndProjects/internal/transport/grpc/mapper"
-
 	workspacev1 "github.com/EvgGo/proto/proto/gen/go/teamAndProjects"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
-
+	"log/slog"
+	"strings"
 	"teamAndProjects/internal/authctx"
 	"teamAndProjects/internal/models"
+	"teamAndProjects/internal/services/svcerr"
 	"teamAndProjects/internal/services/teamsvc"
+	"teamAndProjects/internal/transport/grpc/mapper"
 )
 
 type TeamsServer struct {
@@ -274,7 +272,7 @@ func (s *TeamsServer) UpdateTeamMember(ctx context.Context, req *workspacev1.Upd
 		"user_id", member.UserID,
 	)
 
-	return mapper.TeamMemberToProto(&member), nil
+	return mapper.TeamMemberToProto(member), nil
 }
 
 func (s *TeamsServer) RemoveTeamMember(ctx context.Context, req *workspacev1.RemoveTeamMemberRequest) (*emptypb.Empty, error) {
@@ -297,6 +295,88 @@ func (s *TeamsServer) RemoveTeamMember(ctx context.Context, req *workspacev1.Rem
 	)
 
 	return &emptypb.Empty{}, nil
+}
+
+func (s *TeamsServer) ListTeamMemberDetails(
+	ctx context.Context,
+	req *workspacev1.ListTeamMemberDetailsRequest,
+) (*workspacev1.ListTeamMemberDetailsResponse, error) {
+
+	actorID, ok := authctx.UserID(ctx)
+	if !ok || strings.TrimSpace(actorID) == "" {
+		return nil, svcerr.ToStatus(svcerr.ErrUnauthenticated)
+	}
+
+	result, err := s.svc.ListTeamMemberDetails(ctx, actorID, models.ListTeamMemberDetailsParams{
+		TeamID:    req.GetTeamId(),
+		Query:     req.GetQuery(),
+		SkillIDs:  req.GetSkillIds(),
+		PageSize:  req.GetPageSize(),
+		PageToken: req.GetPageToken(),
+	})
+	if err != nil {
+		return nil, svcerr.ToStatus(err)
+	}
+
+	return mapper.ListTeamMemberDetailsResponseToProto(result), nil
+}
+
+func (s *TeamsServer) UpdateTeamMemberDuties(
+	ctx context.Context,
+	req *workspacev1.UpdateTeamMemberDutiesRequest,
+) (*workspacev1.TeamMember, error) {
+
+	actorID, ok := authctx.UserID(ctx)
+	if !ok || strings.TrimSpace(actorID) == "" {
+		return nil, svcerr.ToStatus(svcerr.ErrUnauthenticated)
+	}
+
+	duties := req.GetDuties()
+
+	in := models.UpdateTeamMemberInput{
+		TeamID: req.GetTeamId(),
+		UserID: req.GetUserId(),
+		Duties: &duties,
+	}
+
+	member, err := s.svc.UpdateTeamMemberDuties(
+		ctx,
+		actorID,
+		in,
+	)
+	if err != nil {
+		return nil, svcerr.ToStatus(err)
+	}
+
+	return mapper.TeamMemberToProto(member), nil
+}
+
+func (s *TeamsServer) UpdateTeamMemberRights(
+	ctx context.Context,
+	req *workspacev1.UpdateTeamMemberRightsRequest,
+) (*workspacev1.TeamMember, error) {
+
+	actorID, ok := authctx.UserID(ctx)
+	if !ok || strings.TrimSpace(actorID) == "" {
+		return nil, svcerr.ToStatus(svcerr.ErrUnauthenticated)
+	}
+
+	member, err := s.svc.UpdateTeamMemberRights(ctx, actorID, models.UpdateTeamMemberRightsParams{
+		TeamID:                   req.GetTeamId(),
+		UserID:                   req.GetUserId(),
+		RootRights:               req.RootRights,
+		ManagerTeam:              req.ManagerTeam,
+		ManagerMembers:           req.ManagerMembers,
+		ManagerMemberDuties:      req.ManagerMemberDuties,
+		ManagerProjectAssignment: req.ManagerProjectAssignment,
+		ManagerProjectRights:     req.ManagerProjectRights,
+		ManagerProjects:          req.ManagerProjects,
+	})
+	if err != nil {
+		return nil, svcerr.ToStatus(err)
+	}
+
+	return mapper.TeamMemberToProto(member), nil
 }
 
 func viewerIDFromContext(ctx context.Context) (string, error) {

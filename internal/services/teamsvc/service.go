@@ -2,8 +2,11 @@ package teamsvc
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
+	"teamAndProjects/internal/adapters/sso"
+	"teamAndProjects/internal/services/svcerr"
 	"teamAndProjects/pkg/utils"
 
 	"teamAndProjects/internal/models"
@@ -11,10 +14,14 @@ import (
 )
 
 type service struct {
-	tx      TxManager
-	teams   TeamsRepo
-	members TeamMembersRepo
-	log     *slog.Logger
+	tx            TxManager
+	teams         TeamsRepo
+	members       TeamMembersRepo
+	memberDetails TeamMemberDetailsRepository
+
+	ViewerProfile sso.ViewerProfileClient
+
+	log *slog.Logger
 }
 
 func New(deps Deps) Service {
@@ -297,7 +304,7 @@ func (s *service) ListTeamMembers(ctx context.Context, filter models.ListTeamMem
 	return items, next, nil
 }
 
-func (s *service) UpdateTeamMember(ctx context.Context, in models.UpdateTeamMemberInput) (models.TeamMember, error) {
+func (s *service) UpdateTeamMember(ctx context.Context, in models.UpdateTeamMemberInput) (*models.TeamMember, error) {
 
 	in.TeamID = strings.TrimSpace(in.TeamID)
 	in.UserID = strings.TrimSpace(in.UserID)
@@ -309,7 +316,7 @@ func (s *service) UpdateTeamMember(ctx context.Context, in models.UpdateTeamMemb
 
 	if in.TeamID == "" || in.UserID == "" {
 		s.log.Debug("teamsvc.UpdateTeamMember: invalid input, empty team_id or user_id")
-		return models.TeamMember{}, repo.ErrInvalidInput
+		return nil, repo.ErrInvalidInput
 	}
 
 	if in.Duties == nil {
@@ -317,20 +324,20 @@ func (s *service) UpdateTeamMember(ctx context.Context, in models.UpdateTeamMemb
 			"team_id", in.TeamID,
 			"user_id", in.UserID,
 		)
-		return models.TeamMember{}, repo.ErrInvalidInput
+		return nil, repo.ErrInvalidInput
 	}
 
 	duties := strings.TrimSpace(*in.Duties)
 	in.Duties = &duties
 
-	member, err := s.members.UpdateDuties(ctx, in)
+	member, err := s.members.UpdateTeamMemberDuties(ctx, in)
 	if err != nil {
 		s.log.Debug("teamsvc.UpdateTeamMember: members.UpdateDuties failed",
 			"team_id", in.TeamID,
 			"user_id", in.UserID,
 			"err", err,
 		)
-		return models.TeamMember{}, err
+		return nil, err
 	}
 
 	s.log.Debug("teamsvc.UpdateTeamMember: success",
@@ -410,4 +417,87 @@ func (s *service) RemoveTeamMember(ctx context.Context, teamID, userID string) e
 	)
 
 	return nil
+}
+
+func (s *service) UpdateTeamMemberDuties(
+	ctx context.Context,
+	actorID string,
+	in models.UpdateTeamMemberInput,
+) (*models.TeamMember, error) {
+
+	actorID = strings.TrimSpace(actorID)
+	in.TeamID = strings.TrimSpace(in.TeamID)
+	in.UserID = strings.TrimSpace(in.UserID)
+
+	if actorID == "" {
+		return nil, svcerr.ErrInvalidActorID
+	}
+	if in.TeamID == "" {
+		return nil, svcerr.ErrInvalidTeamID
+	}
+	if in.UserID == "" {
+		return nil, svcerr.ErrInvalidUserID
+	}
+
+	access, err := s.members.GetTeamAccess(ctx, in.TeamID, actorID)
+	if err != nil {
+		return nil, fmt.Errorf("get team access: %w", err)
+	}
+
+	if !access.MyRights.RootRights && !access.MyRights.ManagerMemberDuties {
+		return nil, svcerr.ErrUpdateTeamMemberDutiesForbidden
+	}
+
+	member, err := s.members.UpdateTeamMemberDuties(ctx, in)
+	if err != nil {
+		return nil, fmt.Errorf("update team member duties: %w", err)
+	}
+
+	return member, nil
+}
+
+func (s *service) UpdateTeamMemberRights(
+	ctx context.Context,
+	actorID string,
+	params models.UpdateTeamMemberRightsParams,
+) (*models.TeamMember, error) {
+
+	actorID = strings.TrimSpace(actorID)
+	params.TeamID = strings.TrimSpace(params.TeamID)
+	params.UserID = strings.TrimSpace(params.UserID)
+
+	if actorID == "" {
+		return nil, svcerr.ErrInvalidActorID
+	}
+	if params.TeamID == "" {
+		return nil, svcerr.ErrInvalidTeamID
+	}
+	if params.UserID == "" {
+		return nil, svcerr.ErrInvalidUserID
+	}
+
+	access, err := s.members.GetTeamAccess(ctx, params.TeamID, actorID)
+	if err != nil {
+		return nil, fmt.Errorf("get team access: %w", err)
+	}
+
+	if !access.MyRights.RootRights {
+		return nil, svcerr.ErrUpdateTeamMemberRightsForbidden
+	}
+
+	if actorID == params.UserID {
+		return nil, svcerr.ErrCannotChangeOwnTeamRights
+	}
+
+	targetIsFounder := params.UserID == access.FounderID
+	if targetIsFounder && params.RootRights != nil && !*params.RootRights {
+		return nil, svcerr.ErrCannotRevokeFounderRootRights
+	}
+
+	member, err := s.members.UpdateTeamMemberRights(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("update team member rights: %w", err)
+	}
+
+	return member, nil
 }

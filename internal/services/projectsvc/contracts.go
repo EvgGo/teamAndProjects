@@ -2,9 +2,6 @@ package projectsvc
 
 import (
 	"context"
-	authv1 "github.com/EvgGo/proto/proto/gen/go/sso"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/emptypb"
 	"teamAndProjects/internal/models"
 	"time"
 )
@@ -81,11 +78,6 @@ type TeamsRepo interface {
 type TeamMembersRepo interface {
 	EnsureMember(ctx context.Context, teamID, userID, duties string) error
 	RemoveTeamMember(ctx context.Context, teamID, userID string) error
-}
-
-type ViewerProfileClient interface {
-	GetMe(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*authv1.User, error)
-	GetProfilesByIds(ctx context.Context, in *authv1.GetProfilesByIdsRequest, opts ...grpc.CallOption) (*authv1.GetProfilesByIdsResponse, error)
 }
 
 type ProjectInvitationsRepo interface {

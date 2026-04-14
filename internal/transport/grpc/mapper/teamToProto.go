@@ -33,5 +33,6 @@ func TeamMemberToProto(m *models.TeamMember) *workspacev1.TeamMember {
 		UserId:   m.UserID,
 		Duties:   m.Duties,
 		JoinedAt: DateFromTime(m.JoinedAt),
+		Rights:   TeamRightsToProto(m.Rights),
 	}
 }

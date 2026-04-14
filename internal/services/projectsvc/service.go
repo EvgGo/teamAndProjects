@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"log/slog"
 	"strings"
+	"teamAndProjects/internal/adapters/sso"
 	"teamAndProjects/pkg/utils"
 	"time"
 
@@ -30,7 +31,7 @@ type Deps struct {
 	TeamMembers              TeamMembersRepo
 	ProjectInvitations       ProjectInvitationsRepo
 
-	ViewerProfile ViewerProfileClient
+	ViewerProfile sso.ViewerProfileClient
 
 	Clock func() time.Time
 }

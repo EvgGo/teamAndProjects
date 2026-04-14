@@ -22,6 +22,7 @@ type Team struct {
 type TeamMember struct {
 	TeamID   string
 	UserID   string
-	Duties   string // "" допустимо
+	Duties   string
 	JoinedAt time.Time
+	Rights   TeamRights
 }

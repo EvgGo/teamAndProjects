@@ -10,21 +10,15 @@ import (
 	"teamAndProjects/internal/repo"
 )
 
-// ToStatus преобразует доменные/репозиторные ошибки в gRPC status
-// - context.Canceled / DeadlineExceeded отдаeм как есть (gRPC сам корректно маппит)
-// - repo.ErrForbidden -> PermissionDenied
-// - repo.ErrConflict  -> FailedPrecondition
 func ToStatus(err error) error {
 	if err == nil {
 		return nil
 	}
 
-	// Если это уже gRPC status, не маппим повторно
 	if _, ok := status.FromError(err); ok {
 		return err
 	}
 
-	// Не скрываем отмену/дедлайн
 	if errors.Is(err, context.Canceled) {
 		return status.Error(codes.Canceled, "request canceled")
 	}
@@ -33,40 +27,49 @@ func ToStatus(err error) error {
 	}
 
 	switch {
-	// invalid argument
 	case errors.Is(err, repo.ErrInvalidInput),
 		errors.Is(err, ErrInvalidActorID),
 		errors.Is(err, ErrInvalidProjectID),
+		errors.Is(err, ErrInvalidTeamID),
 		errors.Is(err, ErrInvalidUserID),
 		errors.Is(err, ErrInvalidInvitationID),
+		errors.Is(err, ErrInvalidPageToken),
 		errors.Is(err, ErrCannotInviteSelf):
 		return status.Error(codes.InvalidArgument, err.Error())
 
-	// unauthenticated
-	case errors.Is(err, repo.ErrUnauthenticated):
+	case errors.Is(err, repo.ErrUnauthenticated),
+		errors.Is(err, ErrUnauthenticated):
 		return status.Error(codes.Unauthenticated, "unauthenticated")
 
-	// permission denied
 	case errors.Is(err, repo.ErrForbidden),
 		errors.Is(err, ErrManageProjectMembersForbidden),
-		errors.Is(err, ErrProjectInvitationWrongRecipient):
+		errors.Is(err, ErrProjectInvitationWrongRecipient),
+		errors.Is(err, ErrTeamAccessForbidden),
+		errors.Is(err, ErrUpdateTeamForbidden),
+		errors.Is(err, ErrDeleteTeamForbidden),
+		errors.Is(err, ErrManageTeamMembersForbidden),
+		errors.Is(err, ErrUpdateTeamMemberDutiesForbidden),
+		errors.Is(err, ErrUpdateTeamMemberRightsForbidden),
+		errors.Is(err, ErrAssignTeamMemberToProjectForbidden),
+		errors.Is(err, ErrManageTeamProjectsForbidden):
 		return status.Error(codes.PermissionDenied, err.Error())
 
-	// not found
 	case errors.Is(err, repo.ErrNotFound):
 		return status.Error(codes.NotFound, "not found")
 
-	// already exists
 	case errors.Is(err, repo.ErrAlreadyExists),
 		errors.Is(err, ErrPendingProjectInvitationExists):
 		return status.Error(codes.AlreadyExists, err.Error())
 
-	// failed precondition / conflict
 	case errors.Is(err, repo.ErrConflict),
 		errors.Is(err, ErrProjectClosed),
 		errors.Is(err, ErrInviteOnlyPublicUser),
 		errors.Is(err, ErrAlreadyProjectMember),
-		errors.Is(err, ErrProjectInvitationNotPending):
+		errors.Is(err, ErrProjectInvitationNotPending),
+		errors.Is(err, ErrCannotChangeOwnTeamRights),
+		errors.Is(err, ErrCannotRemoveSelfFromTeam),
+		errors.Is(err, ErrCannotRemoveTeamFounder),
+		errors.Is(err, ErrCannotRevokeFounderRootRights):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	default:
@@ -75,11 +78,17 @@ func ToStatus(err error) error {
 }
 
 var (
-	ErrInvalidActorID                  = errors.New("actor_id is required")
-	ErrInvalidProjectID                = errors.New("project_id is required")
-	ErrInvalidUserID                   = errors.New("user_id is required")
-	ErrInvalidInvitationID             = errors.New("invitation_id is required")
-	ErrCannotInviteSelf                = errors.New("cannot invite yourself to your own project")
+	ErrUnauthenticated = errors.New("unauthenticated")
+
+	ErrInvalidActorID      = errors.New("actor_id is required")
+	ErrInvalidProjectID    = errors.New("project_id is required")
+	ErrInvalidTeamID       = errors.New("team_id is required")
+	ErrInvalidUserID       = errors.New("user_id is required")
+	ErrInvalidInvitationID = errors.New("invitation_id is required")
+	ErrInvalidPageToken    = errors.New("invalid page_token")
+
+	ErrCannotInviteSelf = errors.New("cannot invite yourself to your own project")
+
 	ErrProjectClosed                   = errors.New("project is closed")
 	ErrInviteOnlyPublicUser            = errors.New("only public users can be invited")
 	ErrManageProjectMembersForbidden   = errors.New("forbidden to manage project members")
@@ -87,4 +96,17 @@ var (
 	ErrPendingProjectInvitationExists  = errors.New("pending project invitation already exists")
 	ErrProjectInvitationNotPending     = errors.New("project invitation is not pending")
 	ErrProjectInvitationWrongRecipient = errors.New("project invitation belongs to another user")
+
+	ErrTeamAccessForbidden                = errors.New("forbidden to access this team")
+	ErrUpdateTeamForbidden                = errors.New("forbidden to update team")
+	ErrDeleteTeamForbidden                = errors.New("forbidden to delete team")
+	ErrManageTeamMembersForbidden         = errors.New("forbidden to manage team members")
+	ErrUpdateTeamMemberDutiesForbidden    = errors.New("forbidden to update team member duties")
+	ErrUpdateTeamMemberRightsForbidden    = errors.New("forbidden to update team member rights")
+	ErrAssignTeamMemberToProjectForbidden = errors.New("forbidden to assign team member to project")
+	ErrManageTeamProjectsForbidden        = errors.New("forbidden to manage team projects")
+	ErrCannotChangeOwnTeamRights          = errors.New("cannot change your own team rights")
+	ErrCannotRemoveSelfFromTeam           = errors.New("cannot remove yourself from team")
+	ErrCannotRemoveTeamFounder            = errors.New("cannot remove team founder")
+	ErrCannotRevokeFounderRootRights      = errors.New("cannot revoke root rights from team founder")
 )

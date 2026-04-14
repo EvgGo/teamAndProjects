@@ -81,29 +81,6 @@ func JoinStatusFromModel(s models.JoinRequestStatus) workspacev1.JoinRequestStat
 	}
 }
 
-// ProjectMemberRightsToProto конвертирует права модели в proto-права
-func ProjectMemberRightsToProto(rights models.ProjectRights) *workspacev1.ProjectRights {
-	return &workspacev1.ProjectRights{
-		ManagerRights:   rights.ManagerRights,
-		ManagerMember:   rights.ManagerMember,
-		ManagerProjects: rights.ManagerProjects,
-		ManagerTasks:    rights.ManagerTasks,
-	}
-}
-
-// ProjectMemberRightsFromProto конвертирует proto-права в модель
-func ProjectMemberRightsFromProto(rights *workspacev1.ProjectRights) models.ProjectRights {
-	if rights == nil {
-		return models.ProjectRights{}
-	}
-	return models.ProjectRights{
-		ManagerRights:   rights.ManagerRights,
-		ManagerMember:   rights.ManagerMember,
-		ManagerProjects: rights.ManagerProjects,
-		ManagerTasks:    rights.ManagerTasks,
-	}
-}
-
 func ProjectPublicSortByToModel(v workspacev1.ProjectPublicSortBy) (models.ProjectPublicSortBy, error) {
 	switch v {
 	case workspacev1.ProjectPublicSortBy_PROJECT_PUBLIC_SORT_BY_UNSPECIFIED:
