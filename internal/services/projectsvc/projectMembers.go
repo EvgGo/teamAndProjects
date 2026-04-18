@@ -129,7 +129,7 @@ func (s *Service) RemoveProjectMember(
 		return nil
 	}
 
-	team, err := s.Deps.Teams.GetByID(ctx, project.TeamID)
+	team, err := s.Deps.Teams.GetByIDForActor(ctx, project.TeamID, actorID)
 	if err != nil {
 		return fmt.Errorf("get team: %w", err)
 	}
@@ -309,7 +309,7 @@ func (s *Service) ListProjectMemberDetails(
 		return nil, fmt.Errorf("get project: %w", err)
 	}
 
-	team, err := s.Deps.Teams.GetByID(ctx, project.TeamID)
+	team, err := s.Deps.Teams.GetByIDForActor(ctx, project.TeamID, actorID)
 	if err != nil {
 		return nil, fmt.Errorf("get team: %w", err)
 	}

@@ -154,19 +154,129 @@ func (s *Service) GetProject(ctx context.Context, projectID string) (models.Proj
 	return project, nil
 }
 
-// CreateProject - без team_id: сервис сам создает команду и права
-func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectParams) (models.Project, error) {
+//// CreateProject - без team_id: сервис сам создает команду и права
+//func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectParams) (models.Project, error) {
+//
+//	caller := authctx.MustUserID(ctx)
+//	if caller == "" {
+//		s.Deps.Log.Warn("CreateProject: неаутентифицированный вызов")
+//		return models.Project{}, repo.ErrUnauthenticated
+//	}
+//	s.Deps.Log.Info("CreateProject: запрос", "caller", caller, "name", in.Name, "description", in.Description,
+//		"status", in.Status, "isOpen", in.IsOpen, "startedAt", in.StartedAt, "finishedAt", in.FinishedAt)
+//
+//	if strings.TrimSpace(in.Name) == "" {
+//		s.Deps.Log.Error("CreateProject: пустое название проекта", "caller", caller)
+//		return models.Project{}, repo.ErrInvalidInput
+//	}
+//
+//	in.StartedAt = dateUTC(in.StartedAt)
+//	if in.FinishedAt != nil {
+//		t := dateUTC(*in.FinishedAt)
+//		in.FinishedAt = &t
+//	}
+//
+//	now := s.Deps.Clock()
+//	_ = now
+//
+//	var out models.Project
+//
+//	err := s.Deps.Tx.WithinTx(ctx, func(txCtx context.Context) error {
+//		// create team
+//		teamName := normalizeTeamName(in.Name, in.TeamName)
+//		s.Deps.Log.Debug("CreateProject: создание команды", "teamName", teamName, "caller", caller)
+//		team, err := s.Deps.Teams.Create(txCtx, models.CreateTeamInput{
+//			Name:        teamName,
+//			Description: "",
+//			IsInvitable: true,
+//			IsJoinable:  true,
+//			FounderID:   caller,
+//			LeadID:      caller,
+//		})
+//		if err != nil {
+//			s.Deps.Log.Error("CreateProject: ошибка создания команды", "teamName", teamName, "caller", caller, "error", err)
+//			return err
+//		}
+//		s.Deps.Log.Debug("CreateProject: команда создана", "teamID", team.ID, "caller", caller)
+//
+//		// ensure team member
+//		if err = s.Deps.TeamMembers.EnsureMember(txCtx, team.ID, caller, ""); err != nil {
+//			s.Deps.Log.Error("CreateProject: ошибка добавления создателя в команду", "teamID", team.ID, "caller", caller, "error", err)
+//			return err
+//		}
+//		s.Deps.Log.Debug("CreateProject: создатель добавлен в команду", "teamID", team.ID, "caller", caller)
+//
+//		// create project
+//		p, err := s.Deps.Projects.Create(txCtx, models.CreateProjectInput{
+//			TeamID:      team.ID,
+//			CreatorID:   caller,
+//			Name:        strings.TrimSpace(in.Name),
+//			Description: strings.TrimSpace(in.Description),
+//			Status:      in.Status,
+//			IsOpen:      in.IsOpen,
+//			StartedAt:   in.StartedAt,
+//			FinishedAt:  in.FinishedAt,
+//			SkillIDs:    in.SkillIDs,
+//		})
+//		if err != nil {
+//			s.Deps.Log.Error("CreateProject: ошибка создания проекта", "teamID", team.ID, "caller", caller, "error", err)
+//			return err
+//		}
+//		s.Deps.Log.Debug("CreateProject: проект создан", "projectID", p.ID, "caller", caller)
+//
+//		addMember := models.AddProjectMemberInput{
+//			ProjectID: p.ID,
+//			UserID:    caller,
+//			Rights:    fullRights(),
+//		}
+//
+//		// project_members full rights
+//		_, err = s.Deps.ProjectMembers.AddMember(txCtx, addMember)
+//		if err != nil {
+//			if errors.Is(err, repo.ErrAlreadyExists) {
+//				s.Deps.Log.Error("CreateProject: конфликт - участник уже существует", "projectID", p.ID, "caller", caller)
+//				return repo.ErrConflict
+//			}
+//			s.Deps.Log.Error("CreateProject: ошибка добавления прав участника проекта", "projectID", p.ID, "caller", caller, "error", err)
+//			return err
+//		}
+//		s.Deps.Log.Debug("CreateProject: права участника проекта назначены", "projectID", p.ID, "caller", caller)
+//
+//		out = p
+//		return nil
+//	})
+//
+//	if err != nil {
+//		s.Deps.Log.Error("CreateProject: ошибка транзакции", "caller", caller, "error", err)
+//		return models.Project{}, err
+//	}
+//
+//	s.Deps.Log.Info("CreateProject: проект успешно создан", "projectID", out.ID, "caller", caller)
+//	return out, nil
+//}
 
+func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectParams) (models.Project, error) {
 	caller := authctx.MustUserID(ctx)
 	if caller == "" {
 		s.Deps.Log.Warn("CreateProject: неаутентифицированный вызов")
 		return models.Project{}, repo.ErrUnauthenticated
 	}
-	s.Deps.Log.Info("CreateProject: запрос", "caller", caller, "name", in.Name, "description", in.Description,
-		"status", in.Status, "isOpen", in.IsOpen, "startedAt", in.StartedAt, "finishedAt", in.FinishedAt)
 
-	if strings.TrimSpace(in.Name) == "" {
-		s.Deps.Log.Error("CreateProject: пустое название проекта", "caller", caller)
+	in.Name = strings.TrimSpace(in.Name)
+	in.Description = strings.TrimSpace(in.Description)
+	in.TeamName = strings.TrimSpace(in.TeamName)
+
+	s.Deps.Log.Info("CreateProject: запрос",
+		"caller", caller,
+		"name", in.Name,
+		"teamName", in.TeamName,
+		"status", in.Status,
+		"isOpen", in.IsOpen,
+		"startedAt", in.StartedAt,
+		"finishedAt", in.FinishedAt,
+	)
+
+	if in.Name == "" {
 		return models.Project{}, repo.ErrInvalidInput
 	}
 
@@ -176,42 +286,59 @@ func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectPara
 		in.FinishedAt = &t
 	}
 
-	now := s.Deps.Clock()
-	_ = now
-
 	var out models.Project
 
 	err := s.Deps.Tx.WithinTx(ctx, func(txCtx context.Context) error {
-		// create team
-		teamName := normalizeTeamName(in.Name, in.TeamName)
-		s.Deps.Log.Debug("CreateProject: создание команды", "teamName", teamName, "caller", caller)
-		team, err := s.Deps.Teams.Create(txCtx, models.CreateTeamInput{
-			Name:        teamName,
-			Description: "",
-			IsInvitable: true,
-			IsJoinable:  true,
-			FounderID:   caller,
-			LeadID:      caller,
-		})
-		if err != nil {
-			s.Deps.Log.Error("CreateProject: ошибка создания команды", "teamName", teamName, "caller", caller, "error", err)
-			return err
-		}
-		s.Deps.Log.Debug("CreateProject: команда создана", "teamID", team.ID, "caller", caller)
+		var teamID string
 
-		// ensure team member
-		if err = s.Deps.TeamMembers.EnsureMember(txCtx, team.ID, caller, ""); err != nil {
-			s.Deps.Log.Error("CreateProject: ошибка добавления создателя в команду", "teamID", team.ID, "caller", caller, "error", err)
-			return err
-		}
-		s.Deps.Log.Debug("CreateProject: создатель добавлен в команду", "teamID", team.ID, "caller", caller)
+		if in.TeamName == "" {
+			teamName := normalizeTeamName(in.Name, "")
 
-		// create project
+			s.Deps.Log.Debug("CreateProject: создание новой команды",
+				"teamName", teamName,
+				"caller", caller,
+			)
+
+			team, err := s.Deps.Teams.Create(txCtx, models.CreateTeamInput{
+				Name:        teamName,
+				Description: "",
+				IsInvitable: true,
+				IsJoinable:  true,
+				FounderID:   caller,
+				LeadID:      caller,
+			})
+			if err != nil {
+				return fmt.Errorf("create team: %w", err)
+			}
+
+			teamID = team.ID
+
+			if err = s.Deps.TeamMembers.EnsureMemberWithRights(txCtx, teamID, caller, "", fullTeamRights()); err != nil {
+				return fmt.Errorf("ensure creator team member with rights: %w", err)
+			}
+		} else {
+			s.Deps.Log.Debug("CreateProject: поиск существующей команды",
+				"teamName", in.TeamName,
+				"caller", caller,
+			)
+
+			teamAccess, err := s.Deps.Teams.GetByNameForActor(txCtx, in.TeamName, caller)
+			if err != nil {
+				return fmt.Errorf("get team by name for actor: %w", err)
+			}
+
+			if !teamAccess.MyRights.RootRights && !teamAccess.MyRights.ManagerProjects {
+				return repo.ErrForbidden
+			}
+
+			teamID = teamAccess.TeamID
+		}
+
 		p, err := s.Deps.Projects.Create(txCtx, models.CreateProjectInput{
-			TeamID:      team.ID,
+			TeamID:      teamID,
 			CreatorID:   caller,
-			Name:        strings.TrimSpace(in.Name),
-			Description: strings.TrimSpace(in.Description),
+			Name:        in.Name,
+			Description: in.Description,
 			Status:      in.Status,
 			IsOpen:      in.IsOpen,
 			StartedAt:   in.StartedAt,
@@ -219,28 +346,20 @@ func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectPara
 			SkillIDs:    in.SkillIDs,
 		})
 		if err != nil {
-			s.Deps.Log.Error("CreateProject: ошибка создания проекта", "teamID", team.ID, "caller", caller, "error", err)
-			return err
+			return fmt.Errorf("create project: %w", err)
 		}
-		s.Deps.Log.Debug("CreateProject: проект создан", "projectID", p.ID, "caller", caller)
 
-		addMember := models.AddProjectMemberInput{
+		_, err = s.Deps.ProjectMembers.AddMember(txCtx, models.AddProjectMemberInput{
 			ProjectID: p.ID,
 			UserID:    caller,
 			Rights:    fullRights(),
-		}
-
-		// project_members full rights
-		_, err = s.Deps.ProjectMembers.AddMember(txCtx, addMember)
+		})
 		if err != nil {
 			if errors.Is(err, repo.ErrAlreadyExists) {
-				s.Deps.Log.Error("CreateProject: конфликт - участник уже существует", "projectID", p.ID, "caller", caller)
 				return repo.ErrConflict
 			}
-			s.Deps.Log.Error("CreateProject: ошибка добавления прав участника проекта", "projectID", p.ID, "caller", caller, "error", err)
-			return err
+			return fmt.Errorf("add creator project member: %w", err)
 		}
-		s.Deps.Log.Debug("CreateProject: права участника проекта назначены", "projectID", p.ID, "caller", caller)
 
 		out = p
 		return nil
@@ -1092,5 +1211,17 @@ func BuildProjectSkillMatchSummary(
 		TotalProjectSkillsCount: int32(total),
 		MatchedSkills:           matched,
 		MissingProjectSkills:    missing,
+	}
+}
+
+func fullTeamRights() models.TeamRights {
+	return models.TeamRights{
+		RootRights:               true,
+		ManagerTeam:              true,
+		ManagerMembers:           true,
+		ManagerMemberDuties:      true,
+		ManagerProjectAssignment: true,
+		ManagerProjectRights:     true,
+		ManagerProjects:          true,
 	}
 }

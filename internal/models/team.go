@@ -15,8 +15,10 @@ type Team struct {
 	FounderID string
 	LeadID    string // "" => NULL
 
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	MyRights     TeamRights
+	Capabilities TeamCapabilities
 }
 
 type TeamMember struct {

@@ -66,18 +66,20 @@ type ProjectPublicRepo interface {
 	ListPublic(ctx context.Context, filter models.ListPublicProjectsRepoParams) ([]models.PublicProjectRow, string, error)
 }
 
-// TeamsRepo нужны для авто-создания команды в CreateProject
 type TeamsRepo interface {
 	Create(ctx context.Context, in models.CreateTeamInput) (models.Team, error)
-	GetByID(ctx context.Context, teamID string) (*models.Team, error)
+	GetByIDForActor(ctx context.Context, teamID string, actorID string) (*models.Team, error)
 	Update(ctx context.Context, in models.UpdateTeamInput) (models.Team, error)
 	Delete(ctx context.Context, teamID string) error
 	List(ctx context.Context, filter models.ListTeamsFilter) ([]models.Team, string, error)
+	GetByNameForActor(ctx context.Context, teamName string, actorID string) (*models.TeamAccessRow, error)
 }
 
 type TeamMembersRepo interface {
 	EnsureMember(ctx context.Context, teamID, userID, duties string) error
 	RemoveTeamMember(ctx context.Context, teamID, userID string) error
+	EnsureMemberWithRights(ctx context.Context, teamID string, userID string,
+		duties string, rights models.TeamRights) error
 }
 
 type ProjectInvitationsRepo interface {

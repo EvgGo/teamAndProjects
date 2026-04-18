@@ -20,6 +20,9 @@ func TeamToProto(t *models.Team) *workspacev1.Team {
 		LeadId:      t.LeadID,
 		CreatedAt:   DateFromTime(t.CreatedAt),
 		UpdatedAt:   DateFromTime(t.UpdatedAt),
+
+		MyRights:     TeamRightsToProto(t.MyRights),
+		Capabilities: TeamCapabilitiesToProto(t.Capabilities),
 	}
 }
 

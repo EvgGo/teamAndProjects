@@ -19,7 +19,7 @@ type service struct {
 	members       TeamMembersRepo
 	memberDetails TeamMemberDetailsRepository
 
-	ViewerProfile sso.ViewerProfileClient
+	viewerProfile sso.ViewerProfileClient
 
 	log *slog.Logger
 }
@@ -34,15 +34,20 @@ func New(deps Deps) Service {
 	if deps.Members == nil {
 		panic("teamsvc.New: TeamMembers repo is nil")
 	}
+	if deps.ViewerProfile == nil {
+		panic("teamsvc.New: ViewerProfile Client is nil")
+	}
 	if deps.Log == nil {
 		deps.Log = slog.Default()
 	}
 
 	return &service{
-		tx:      deps.Tx,
-		teams:   deps.Teams,
-		members: deps.Members,
-		log:     deps.Log,
+		tx:            deps.Tx,
+		teams:         deps.Teams,
+		members:       deps.Members,
+		memberDetails: deps.MembersDetail,
+		viewerProfile: deps.ViewerProfile,
+		log:           deps.Log,
 	}
 }
 
@@ -112,25 +117,35 @@ func (s *service) CreateTeam(ctx context.Context, in models.CreateTeamInput) (mo
 	return created, nil
 }
 
-func (s *service) GetTeam(ctx context.Context, teamID string) (*models.Team, error) {
+func (s *service) GetTeam(
+	ctx context.Context,
+	actorID string,
+	teamID string,
+) (*models.Team, error) {
 
+	actorID = strings.TrimSpace(actorID)
 	teamID = strings.TrimSpace(teamID)
 
-	s.log.Debug("teamsvc.GetTeam: start", "team_id", teamID)
+	s.log.Debug("teamsvc.GetTeam: start", "actor_id", actorID, "team_id", teamID)
 
+	if actorID == "" {
+		return nil, repo.ErrInvalidInput
+	}
 	if teamID == "" {
-		s.log.Debug("teamsvc.GetTeam: invalid input, empty team_id")
 		return nil, repo.ErrInvalidInput
 	}
 
-	team, err := s.teams.GetByID(ctx, teamID)
+	team, err := s.teams.GetByIDForActor(ctx, teamID, actorID)
 	if err != nil {
-		s.log.Debug("teamsvc.GetTeam: teams.GetByID failed",
+		s.log.Debug("teamsvc.GetTeam: teams.GetByIDForActor failed",
+			"actor_id", actorID,
 			"team_id", teamID,
 			"err", err,
 		)
 		return nil, err
 	}
+
+	team.Capabilities = buildTeamCapabilities(team.MyRights, actorID, team.FounderID)
 
 	s.log.Debug("teamsvc.GetTeam: success", "team_id", team.ID)
 	return team, nil
@@ -138,13 +153,30 @@ func (s *service) GetTeam(ctx context.Context, teamID string) (*models.Team, err
 
 func (s *service) UpdateTeam(ctx context.Context, in models.UpdateTeamInput) (models.Team, error) {
 
+	in.ActorID = strings.TrimSpace(in.ActorID)
 	in.TeamID = strings.TrimSpace(in.TeamID)
 
-	s.log.Debug("teamsvc.UpdateTeam: start", "team_id", in.TeamID)
+	s.log.Debug("teamsvc.UpdateTeam: start",
+		"actor_id", in.ActorID,
+		"team_id", in.TeamID,
+	)
 
-	if in.TeamID == "" {
-		s.log.Debug("teamsvc.UpdateTeam: invalid input, empty team_id")
+	if in.ActorID == "" || in.TeamID == "" {
 		return models.Team{}, repo.ErrInvalidInput
+	}
+
+	access, err := s.members.GetTeamAccess(ctx, in.TeamID, in.ActorID)
+	if err != nil {
+		s.log.Debug("teamsvc.UpdateTeam: get team access failed",
+			"actor_id", in.ActorID,
+			"team_id", in.TeamID,
+			"err", err,
+		)
+		return models.Team{}, err
+	}
+
+	if !access.MyRights.RootRights && !access.MyRights.ManagerTeam {
+		return models.Team{}, repo.ErrForbidden
 	}
 
 	hasChanges := false
@@ -152,9 +184,6 @@ func (s *service) UpdateTeam(ctx context.Context, in models.UpdateTeamInput) (mo
 	if in.Name != nil {
 		name := strings.TrimSpace(*in.Name)
 		if name == "" {
-			s.log.Debug("teamsvc.UpdateTeam: invalid input, empty name in patch",
-				"team_id", in.TeamID,
-			)
 			return models.Team{}, repo.ErrInvalidInput
 		}
 		in.Name = &name
@@ -182,7 +211,7 @@ func (s *service) UpdateTeam(ctx context.Context, in models.UpdateTeamInput) (mo
 
 		if leadID != "" {
 			if _, err := s.members.GetMember(ctx, in.TeamID, leadID); err != nil {
-				s.log.Debug("teamsvc.UpdateTeam: lead user is not a team member or lookup failed",
+				s.log.Debug("teamsvc.UpdateTeam: lead user is not team member",
 					"team_id", in.TeamID,
 					"lead_id", leadID,
 					"err", err,
@@ -193,9 +222,6 @@ func (s *service) UpdateTeam(ctx context.Context, in models.UpdateTeamInput) (mo
 	}
 
 	if !hasChanges {
-		s.log.Debug("teamsvc.UpdateTeam: invalid input, empty patch",
-			"team_id", in.TeamID,
-		)
 		return models.Team{}, repo.ErrInvalidInput
 	}
 
@@ -207,6 +233,9 @@ func (s *service) UpdateTeam(ctx context.Context, in models.UpdateTeamInput) (mo
 		)
 		return models.Team{}, err
 	}
+
+	updated.MyRights = access.MyRights
+	updated.Capabilities = buildTeamCapabilities(access.MyRights, in.ActorID, updated.FounderID)
 
 	s.log.Debug("teamsvc.UpdateTeam: success", "team_id", updated.ID)
 	return updated, nil
@@ -363,7 +392,7 @@ func (s *service) RemoveTeamMember(ctx context.Context, teamID, userID string) e
 		return repo.ErrInvalidInput
 	}
 
-	team, err := s.teams.GetByID(ctx, teamID)
+	team, err := s.teams.GetByIDForActor(ctx, teamID, userID)
 	if err != nil {
 		s.log.Debug("teamsvc.RemoveTeamMember: teams.GetByID failed",
 			"team_id", teamID,

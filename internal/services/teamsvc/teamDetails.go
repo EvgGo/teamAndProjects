@@ -7,6 +7,7 @@ import (
 	"fmt"
 	ssov1 "github.com/EvgGo/proto/proto/gen/go/sso"
 	"strings"
+	"teamAndProjects/internal/helpers"
 	"teamAndProjects/internal/models"
 	"teamAndProjects/internal/services/svcerr"
 	"teamAndProjects/pkg/utils"
@@ -17,6 +18,7 @@ func (s *service) ListTeamMemberDetails(
 	actorID string,
 	params models.ListTeamMemberDetailsParams,
 ) (*models.ListTeamMemberDetailsResult, error) {
+
 	teamID := strings.TrimSpace(params.TeamID)
 	if teamID == "" {
 		return nil, svcerr.ErrInvalidTeamID
@@ -25,7 +27,7 @@ func (s *service) ListTeamMemberDetails(
 		return nil, svcerr.ErrInvalidActorID
 	}
 
-	access, err := s.memberDetails.GetTeamAccess(ctx, teamID, actorID)
+	access, err := s.members.GetTeamAccess(ctx, teamID, actorID)
 	if err != nil {
 		return nil, fmt.Errorf("get team access: %w", err)
 	}
@@ -125,12 +127,14 @@ func (s *service) getPublicProfilesByIDs(
 	userIDs []string,
 ) (map[string]models.TeamMemberUserSummary, error) {
 
+	ctx = helpers.ForwardAuthorization(ctx)
+
 	result := make(map[string]models.TeamMemberUserSummary, len(userIDs))
 	if len(userIDs) == 0 {
 		return result, nil
 	}
 
-	resp, err := s.ViewerProfile.GetProfilesByIds(ctx, &ssov1.GetProfilesByIdsRequest{
+	resp, err := s.viewerProfile.GetProfilesByIds(ctx, &ssov1.GetProfilesByIdsRequest{
 		UserIds: userIDs,
 	})
 	if err != nil {

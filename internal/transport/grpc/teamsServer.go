@@ -74,6 +74,7 @@ func (s *TeamsServer) CreateTeam(ctx context.Context, req *workspacev1.CreateTea
 }
 
 func (s *TeamsServer) GetTeam(ctx context.Context, req *workspacev1.GetTeamRequest) (*workspacev1.Team, error) {
+
 	reqLog := s.log.With(
 		"grpc_method", "GetTeam",
 		"team_id", req.GetTeamId(),
@@ -81,7 +82,12 @@ func (s *TeamsServer) GetTeam(ctx context.Context, req *workspacev1.GetTeamReque
 
 	reqLog.Debug("получен gRPC-запрос на получение команды")
 
-	team, err := s.svc.GetTeam(ctx, req.GetTeamId())
+	actorID, ok := authctx.UserID(ctx)
+	if !ok || strings.TrimSpace(actorID) == "" {
+		return nil, svcerr.ToStatus(svcerr.ErrUnauthenticated)
+	}
+
+	team, err := s.svc.GetTeam(ctx, actorID, req.GetTeamId())
 	if err != nil {
 		reqLog.Error("ошибка получения команды", "err", err)
 		return nil, svcerr.ToStatus(err)
@@ -100,8 +106,14 @@ func (s *TeamsServer) UpdateTeam(ctx context.Context, req *workspacev1.UpdateTea
 
 	reqLog.Debug("получен gRPC-запрос на обновление команды")
 
+	actorID, ok := authctx.UserID(ctx)
+	if !ok || strings.TrimSpace(actorID) == "" {
+		return nil, svcerr.ToStatus(svcerr.ErrUnauthenticated)
+	}
+
 	in := models.UpdateTeamInput{
-		TeamID: req.GetTeamId(),
+		TeamID:  req.GetTeamId(),
+		ActorID: actorID,
 	}
 
 	if req.Name != nil {

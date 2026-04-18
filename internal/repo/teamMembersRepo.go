@@ -700,6 +700,80 @@ func (r *TeamMembersRepo) ListTeamProjectsForAssignment(
 	return items, nextPageToken, nil
 }
 
+func (r *TeamMembersRepo) EnsureMemberWithRights(
+	ctx context.Context,
+	teamID string,
+	userID string,
+	duties string,
+	rights models.TeamRights,
+) error {
+	teamID = strings.TrimSpace(teamID)
+	userID = strings.TrimSpace(userID)
+	duties = strings.TrimSpace(duties)
+
+	if teamID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	const q = `
+		insert into team_members (
+			team_id,
+			user_id,
+			duties,
+			root_rights,
+			manager_team,
+			manager_members,
+			manager_member_duties,
+			manager_project_assignment,
+			manager_project_rights,
+			manager_projects
+		)
+		values (
+			$1::uuid,
+			$2::uuid,
+			nullif($3, ''),
+			$4,
+			$5,
+			$6,
+			$7,
+			$8,
+			$9,
+			$10
+		)
+		on conflict (team_id, user_id) do update set
+			duties = coalesce(nullif(excluded.duties, ''), team_members.duties),
+			root_rights = excluded.root_rights,
+			manager_team = excluded.manager_team,
+			manager_members = excluded.manager_members,
+			manager_member_duties = excluded.manager_member_duties,
+			manager_project_assignment = excluded.manager_project_assignment,
+			manager_project_rights = excluded.manager_project_rights,
+			manager_projects = excluded.manager_projects
+	`
+
+	_, err := qr.Exec(
+		ctx,
+		q,
+		teamID,
+		userID,
+		duties,
+		rights.RootRights,
+		rights.ManagerTeam,
+		rights.ManagerMembers,
+		rights.ManagerMemberDuties,
+		rights.ManagerProjectAssignment,
+		rights.ManagerProjectRights,
+		rights.ManagerProjects,
+	)
+	if err != nil {
+		return mapPgErr(err)
+	}
+
+	return nil
+}
+
 func (r *TeamMembersRepo) EnsureTeamMemberExists(
 	ctx context.Context,
 	teamID string,

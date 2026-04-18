@@ -95,10 +95,16 @@ func (r *TeamsRepo) Create(ctx context.Context, in models.CreateTeamInput) (mode
 	return t, nil
 }
 
-func (r *TeamsRepo) GetByID(ctx context.Context, teamID string) (*models.Team, error) {
+func (r *TeamsRepo) GetByIDForActor(
+	ctx context.Context,
+	teamID string,
+	actorID string,
+) (*models.Team, error) {
 
 	teamID = strings.TrimSpace(teamID)
-	if teamID == "" {
+	actorID = strings.TrimSpace(actorID)
+
+	if teamID == "" || actorID == "" {
 		return nil, ErrInvalidInput
 	}
 
@@ -106,21 +112,36 @@ func (r *TeamsRepo) GetByID(ctx context.Context, teamID string) (*models.Team, e
 
 	const q = `
 		select
-			id::text,
-			name,
-			coalesce(description, ''),
-			is_invitable,
-			is_joinable,
-			founder_id::text,
-			coalesce(lead_id::text, ''),
-			created_at,
-			updated_at
-		from teams
-		where id = $1
-		`
+			t.id::text,
+			t.name,
+			coalesce(t.description, ''),
+			t.is_invitable,
+			t.is_joinable,
+			t.founder_id::text,
+			coalesce(t.lead_id::text, ''),
+			t.created_at,
+			t.updated_at,
+
+			(tm.user_id is not null) as is_member,
+
+			coalesce(tm.root_rights, false),
+			coalesce(tm.manager_team, false),
+			coalesce(tm.manager_members, false),
+			coalesce(tm.manager_member_duties, false),
+			coalesce(tm.manager_project_assignment, false),
+			coalesce(tm.manager_project_rights, false),
+			coalesce(tm.manager_projects, false)
+		from teams t
+		left join team_members tm
+			on tm.team_id = t.id
+		   and tm.user_id = $2::uuid
+		where t.id = $1::uuid
+	`
 
 	var out models.Team
-	err := qr.QueryRow(ctx, q, teamID).Scan(
+	var isMember bool
+
+	err := qr.QueryRow(ctx, q, teamID, actorID).Scan(
 		&out.ID,
 		&out.Name,
 		&out.Description,
@@ -130,12 +151,26 @@ func (r *TeamsRepo) GetByID(ctx context.Context, teamID string) (*models.Team, e
 		&out.LeadID,
 		&out.CreatedAt,
 		&out.UpdatedAt,
+
+		&isMember,
+
+		&out.MyRights.RootRights,
+		&out.MyRights.ManagerTeam,
+		&out.MyRights.ManagerMembers,
+		&out.MyRights.ManagerMemberDuties,
+		&out.MyRights.ManagerProjectAssignment,
+		&out.MyRights.ManagerProjectRights,
+		&out.MyRights.ManagerProjects,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, mapPgErr(err)
+	}
+
+	if !isMember {
+		return nil, ErrForbidden
 	}
 
 	return &out, nil
@@ -381,6 +416,89 @@ func (r *TeamMembersRepo) RemoveTeamMember(ctx context.Context, teamID, userID s
 	}
 
 	return nil
+}
+
+func (r *TeamsRepo) GetByNameForActor(
+	ctx context.Context,
+	teamName string,
+	actorID string,
+) (*models.TeamAccessRow, error) {
+
+	teamName = strings.TrimSpace(teamName)
+	actorID = strings.TrimSpace(actorID)
+
+	if teamName == "" || actorID == "" {
+		return nil, ErrInvalidInput
+	}
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	const q = `
+		select
+			t.id::text,
+			t.founder_id::text,
+			coalesce(t.lead_id::text, ''),
+
+			tm.root_rights,
+			tm.manager_team,
+			tm.manager_members,
+			tm.manager_member_duties,
+			tm.manager_project_assignment,
+			tm.manager_project_rights,
+			tm.manager_projects
+		from teams t
+		join team_members tm on tm.team_id = t.id
+		where tm.user_id = $1::uuid
+		  and t.name = $2
+		order by
+			case when t.founder_id = $1::uuid then 0 else 1 end,
+			t.created_at desc
+		limit 2
+	`
+
+	rows, err := qr.Query(ctx, q, actorID, teamName)
+	if err != nil {
+		return nil, mapPgErr(err)
+	}
+	defer rows.Close()
+
+	items := make([]models.TeamAccessRow, 0, 2)
+
+	for rows.Next() {
+		var item models.TeamAccessRow
+
+		err = rows.Scan(
+			&item.TeamID,
+			&item.FounderID,
+			&item.LeadID,
+			&item.MyRights.RootRights,
+			&item.MyRights.ManagerTeam,
+			&item.MyRights.ManagerMembers,
+			&item.MyRights.ManagerMemberDuties,
+			&item.MyRights.ManagerProjectAssignment,
+			&item.MyRights.ManagerProjectRights,
+			&item.MyRights.ManagerProjects,
+		)
+		if err != nil {
+			return nil, mapPgErr(err)
+		}
+
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, mapPgErr(err)
+	}
+
+	if len(items) == 0 {
+		return nil, ErrNotFound
+	}
+
+	if len(items) > 1 {
+		return nil, ErrConflict
+	}
+
+	return &items[0], nil
 }
 
 func mapPgErr(err error) error {

@@ -17,101 +17,6 @@ import (
 	"time"
 )
 
-//type App struct {
-//	GRPCSrv *grpcapp.App
-//	db      *pgxpool.Pool
-//}
-//
-//// New создает Workspace приложение (Teams + Projects):
-//// - поднимает pgxpool
-//// - собирает repositories
-//// - собирает tx manager
-//// - собирает service layer
-//// - собирает JWT verifier
-//// - собирает gRPC servers для Teams и Projects
-//// - собирает grpcapp
-//func New(
-//	log *slog.Logger,
-//	grpcPort int,
-//	confDB *config.DatabaseConfig,
-//	jwtCfg *config.JWTVerifyConfig,
-//	grpcCfg config.GRPCConfig,
-//	viewerProfileClient ssov1.UserProfileClient,
-//) (*App, error) {
-//	pool, err := postgres.NewPool(confDB)
-//	if err != nil {
-//		return nil, fmt.Errorf("init postgres: %w", err)
-//	}
-//
-//	cleanupOnErr := func(e error) (*App, error) {
-//		pool.Close()
-//		return nil, e
-//	}
-//
-//	teamRepo := repo.NewTeamsRepo(pool)
-//	teamMembersRepo := repo.NewTeamMembersRepo(pool)
-//	projectsRepo := repo.NewProjectsRepo(pool)
-//	projectMembersRepo := repo.NewProjectMembersRepo(pool)
-//	joinReqRepo := repo.NewProjectJoinRequestRepo(pool)
-//	publicRepo := repo.NewProjectPublicRepo(pool)
-//
-//	tx := repo.NewTxManager(pool)
-//
-//	// Один общий service, если он реализует и логику teams, и логику projects
-//	workspaceService := projectsvc.New(projectsvc.Deps{
-//		Tx:            tx,
-//		Projects:      projectsRepo,
-//		Members:       projectMembersRepo,
-//		JoinReqs:      joinReqRepo,
-//		Public:        publicRepo,
-//		Log:           log,
-//		Teams:         teamRepo,
-//		TeamMembers:   teamMembersRepo,
-//		ViewerProfile: viewerProfileClient,
-//	})
-//
-//	verifier, err := jwtverify.NewHSVerifier(jwtverify.HSOptions{
-//		Issuer:     jwtCfg.Issuer,
-//		SigningKey: []byte(jwtCfg.SigningKey),
-//		ClockSkew:  jwtCfg.ClockSkew,
-//	})
-//	if err != nil {
-//		return cleanupOnErr(fmt.Errorf("init jwt verifier: %w", err))
-//	}
-//
-//	teamsServer := transportgrpc.NewTeamsServer(workspaceService)
-//	if teamsServer == nil {
-//		return cleanupOnErr(fmt.Errorf("init teams grpc server: nil"))
-//	}
-//
-//	projectsServer := transportgrpc.NewProjectsServer(workspaceService)
-//	if projectsServer == nil {
-//		return cleanupOnErr(fmt.Errorf("init projects grpc server: nil"))
-//	}
-//
-//	grpcApp := grpcapp.New(log, grpcPort, grpcapp.Deps{
-//		Teams:    teamsServer,
-//		Projects: projectsServer,
-//		JWT:      verifier,
-//		Timeout:  grpcCfg.Timeout,
-//	})
-//
-//	if grpcApp == nil {
-//		return cleanupOnErr(fmt.Errorf("init grpc app: nil"))
-//	}
-//
-//	return &App{
-//		GRPCSrv: grpcApp,
-//		db:      pool,
-//	}, nil
-//}
-//
-//func (a *App) Close() {
-//	if a.db != nil {
-//		a.db.Close()
-//	}
-//}
-
 type App struct {
 	GRPCSrv *grpcapp.App
 	db      *pgxpool.Pool
@@ -153,14 +58,17 @@ func New(
 	publicRepo := repo.NewProjectPublicRepo(pool)
 	joinReqsDetailsRepo := repo.NewProjectJoinRequestDetailsRepo(pool, log)
 	projectInvitations := repo.NewProjectInvitationsRepo(pool, log)
+	teamMembersDeatils := repo.NewTeamMembersRepo(pool)
 
 	tx := repo.NewTxManager(pool)
 
 	teamsService := teamsvc.New(teamsvc.Deps{
-		Tx:      tx,
-		Teams:   teamRepo,
-		Members: teamMembersRepo,
-		Log:     log,
+		Tx:            tx,
+		Teams:         teamRepo,
+		Members:       teamMembersRepo,
+		MembersDetail: teamMembersDeatils,
+		ViewerProfile: viewerProfileClient,
+		Log:           log,
 	})
 	if teamsService == nil {
 		return cleanupOnErr(fmt.Errorf("init teams service: nil"))

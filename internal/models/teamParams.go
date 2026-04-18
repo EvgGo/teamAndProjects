@@ -17,6 +17,8 @@ type UpdateTeamInput struct {
 	IsInvitable *bool
 	IsJoinable  *bool
 	LeadID      *string // nil = не трогаем, "" = очистить
+
+	ActorID string
 }
 
 type ListTeamsFilter struct {
