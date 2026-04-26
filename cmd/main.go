@@ -21,8 +21,7 @@ func main() {
 	defer cancel()
 
 	if err := godotenv.Load(".env"); err != nil {
-		log.Println("Внимание: файл .env не найден, используются переменные окружения по умолчанию")
-		panic(err)
+		log.Fatalf("Внимание: файл .env не найден, используются переменные окружения по умолчанию")
 	}
 
 	cfg := config.MustLoad("CONFIG_PATH_PROJECTS")

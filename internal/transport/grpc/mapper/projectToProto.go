@@ -7,7 +7,7 @@ import (
 )
 
 // ProjectToProto конвертирует модель проекта в protobuf-сообщение
-func ProjectToProto(p models.Project) *workspacev1.Project {
+func ProjectToProto(p *models.Project) *workspacev1.Project {
 
 	skillIDs := make([]string, 0, len(p.SkillIDs))
 	for _, id := range p.SkillIDs {
@@ -23,19 +23,20 @@ func ProjectToProto(p models.Project) *workspacev1.Project {
 	}
 
 	return &workspacev1.Project{
-		Id:          p.ID,
-		TeamId:      p.TeamID,
-		CreatorId:   p.CreatorID,
-		Name:        p.Name,
-		Description: p.Description,
-		Status:      ProjectStatusFromModel(p.Status),
-		IsOpen:      p.IsOpen,
-		StartedAt:   DateFromTime(p.StartedAt),
-		FinishedAt:  DateFromTimePtr(p.FinishedAt),
-		CreatedAt:   DateFromTime(p.CreatedAt),
-		UpdatedAt:   DateFromTime(p.UpdatedAt),
-		SkillIds:    skillIDs,
-		Skills:      skills,
-		MyRights:    ProjectRightsToProto(p.MyRights),
+		Id:                     p.ID,
+		TeamId:                 p.TeamID,
+		CreatorId:              p.CreatorID,
+		Name:                   p.Name,
+		Description:            p.Description,
+		Status:                 ProjectStatusFromModel(p.Status),
+		IsOpen:                 p.IsOpen,
+		StartedAt:              DateFromTime(p.StartedAt),
+		FinishedAt:             DateFromTimePtr(p.FinishedAt),
+		CreatedAt:              DateFromTime(p.CreatedAt),
+		UpdatedAt:              DateFromTime(p.UpdatedAt),
+		SkillIds:               skillIDs,
+		Skills:                 skills,
+		MyRights:               ProjectRightsToProto(p.MyRights),
+		AssessmentRequirements: ProjectAssessmentRequirementsToProto(p.AssessmentRequirements),
 	}
 }

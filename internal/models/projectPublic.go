@@ -3,17 +3,18 @@ package models
 import "time"
 
 type ProjectPublic struct {
-	ID          string
-	TeamID      string
-	Name        string
-	Description string
-	Status      ProjectStatus
-	IsOpen      bool
-	StartedAt   time.Time
-	FinishedAt  *time.Time
-	CreatedAt   time.Time
-	SkillIDs    []int
-	Skills      []ProjectSkill
+	ID                     string
+	TeamID                 string
+	Name                   string
+	Description            string
+	Status                 ProjectStatus
+	IsOpen                 bool
+	StartedAt              time.Time
+	FinishedAt             *time.Time
+	CreatedAt              time.Time
+	SkillIDs               []int
+	Skills                 []ProjectSkill
+	AssessmentRequirements []ProjectAssessmentRequirement
 }
 
 type ListPublicProjectsFilter struct {

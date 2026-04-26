@@ -31,6 +31,7 @@ type ProjectsRepo interface {
 	SetOpen(ctx context.Context, projectID string, isOpen bool) (models.Project, error)
 	ListProjects(ctx context.Context, filter *models.ProjectsFilter) ([]models.Project, string, error)
 	HasUserCreatedProjectsInTeam(ctx context.Context, teamID, userID string) (bool, error)
+	GetByIDForActor(ctx context.Context, projectID, actorID string) (models.Project, error)
 }
 
 type ProjectJoinRequestsRepo interface {
@@ -42,6 +43,7 @@ type ProjectJoinRequestsRepo interface {
 	ListByProject(ctx context.Context, projectID string, status *models.JoinRequestStatus, pageSize int32, pageToken string) ([]models.ProjectJoinRequest, string, error)
 	ListManageableProjectJoinRequestBuckets(ctx context.Context, filter models.ListManageableProjectJoinRequestBucketsFilter) ([]models.ManageableProjectJoinRequestBucket, string, error)
 	ListMyProjectJoinRequests(ctx context.Context, filter models.ListMyProjectJoinRequestsFilter) ([]models.MyProjectJoinRequestItem, string, error)
+	HasPendingByProjectAndRequester(ctx context.Context, projectID string, requesterID string) (bool, error)
 }
 
 type ProjectJoinRequestDetailsRepo interface {
@@ -60,6 +62,19 @@ type CandidateSummaryProvider interface {
 		ctx context.Context,
 		userIDs []string,
 	) (map[string]models.CandidatePublicSummary, error)
+}
+
+type ProjectAssessmentRequirementsRepository interface {
+	ListByProjectID(ctx context.Context, projectID string) ([]models.ProjectAssessmentRequirement, error)
+	ReplaceForProject(ctx context.Context, projectID string, requirements []models.ProjectAssessmentRequirement) error
+}
+
+type AssessmentCatalogRepository interface {
+	GetActiveByIDs(ctx context.Context, assessmentIDs []int64) (map[int64]models.ProjectAssessmentRequirement, error)
+}
+
+type MyAssessmentResultsProvider interface {
+	GetMySavedAssessmentResults(ctx context.Context) (map[int64]models.SavedAssessmentResult, error)
 }
 
 type ProjectPublicRepo interface {
@@ -106,4 +121,6 @@ type ProjectInvitationsRepo interface {
 	RejectProjectInvitation(ctx context.Context, in models.DecideProjectInvitationInput) (models.ProjectInvitation, error)
 
 	RevokeProjectInvitation(ctx context.Context, in models.DecideProjectInvitationInput) (models.ProjectInvitation, error)
+
+	HasPendingByProjectAndInvitedUser(ctx context.Context, projectID string, userID string) (bool, error)
 }

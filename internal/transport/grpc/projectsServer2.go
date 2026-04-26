@@ -79,7 +79,7 @@ func (s *ProjectsServer) CreateProject(ctx context.Context, req *workspacev1.Cre
 		return nil, svcerr.ToStatus(err)
 	}
 
-	return mapper.ProjectToProto(project), nil
+	return mapper.ProjectToProto(&project), nil
 }
 
 // GetProject возвращает информацию о проекте с учетом прав доступа
@@ -90,7 +90,7 @@ func (s *ProjectsServer) GetProject(ctx context.Context, req *workspacev1.GetPro
 		return nil, svcerr.ToStatus(err)
 	}
 	utils.PrintReadable(project)
-	return mapper.ProjectToProto(project), nil
+	return mapper.ProjectToProto(&project), nil
 }
 
 func (s *ProjectsServer) UpdateProject(ctx context.Context, req *workspacev1.UpdateProjectRequest) (*workspacev1.Project, error) {
@@ -183,7 +183,7 @@ func (s *ProjectsServer) UpdateProject(ctx context.Context, req *workspacev1.Upd
 		return nil, svcerr.ToStatus(err)
 	}
 
-	return mapper.ProjectToProto(project), nil
+	return mapper.ProjectToProto(&project), nil
 }
 
 // DeleteProject удаляет проект
@@ -266,7 +266,7 @@ func (s *ProjectsServer) ListProjects(ctx context.Context, req *workspacev1.List
 
 	out := make([]*workspacev1.Project, 0, len(projects))
 	for _, p := range projects {
-		out = append(out, mapper.ProjectToProto(p))
+		out = append(out, mapper.ProjectToProto(&p))
 	}
 
 	return &workspacev1.ListProjectsResponse{
@@ -395,89 +395,8 @@ func (s *ProjectsServer) SetProjectOpen(ctx context.Context, req *workspacev1.Se
 	if err != nil {
 		return nil, svcerr.ToStatus(err)
 	}
-	return mapper.ProjectToProto(project), nil
+	return mapper.ProjectToProto(&project), nil
 }
-
-//// ListProjectMembers возвращает список участников проекта.
-//func (s *ProjectsServer) ListProjectMembers(ctx context.Context, req *workspacev1.ListProjectMembersRequest) (*workspacev1.ListProjectMembersResponse, error) {
-//
-//	members, next, err := s.svc.ListProjectMembers(ctx, req.GetProjectId(), req.GetPageSize(), req.GetPageToken())
-//	if err != nil {
-//		return nil, svcerr.ToStatus(err)
-//	}
-//	out := make([]*workspacev1.ProjectMember, 0, len(members))
-//	for _, m := range members {
-//		out = append(out, &workspacev1.ProjectMember{
-//			ProjectId: m.ProjectID,
-//			UserId:    m.UserID,
-//			Rights:    projectMemberRightsToProto(m.Rights),
-//		})
-//	}
-//	return &workspacev1.ListProjectMembersResponse{
-//		Members:       out,
-//		NextPageToken: next,
-//	}, nil
-//}
-//
-//// AddProjectMember добавляет участника в проект (требует прав manager_member / manager_rights).
-//func (s *ProjectsServer) AddProjectMember(ctx context.Context, req *workspacev1.AddProjectMemberRequest) (*workspacev1.ProjectMember, error) {
-//	rights := ProjectMemberRightsFromProto(req.GetRights())
-//	member, err := s.svc.AddProjectMember(ctx, req.GetProjectId(), req.GetUserId(), rights)
-//	if err != nil {
-//		return nil, svcerr.ToStatus(err)
-//	}
-//	return &workspacev1.ProjectMember{
-//		ProjectId: member.ProjectID,
-//		UserId:    member.UserID,
-//		Rights:    projectMemberRightsToProto(member.Rights),
-//	}, nil
-//}
-//
-//// RemoveProjectMember удаляет участника из проекта
-//func (s *ProjectsServer) RemoveProjectMember(ctx context.Context, req *workspacev1.RemoveProjectMemberRequest) (*emptypb.Empty, error) {
-//	err := s.svc.RemoveProjectMember(ctx, req.GetProjectId(), req.GetUserId())
-//	if err != nil {
-//		return nil, svcerr.ToStatus(err)
-//	}
-//	return &emptypb.Empty{}, nil
-//}
-//
-//// UpdateProjectMemberRights обновляет права участника (частичный патч).
-//// Поскольку бизнес-логика заменяет права целиком, мы сначала получаем текущие права,
-//// применяем изменения из запроса, затем вызываем UpdateProjectMemberRights.
-//func (s *ProjectsServer) UpdateProjectMemberRights(ctx context.Context, req *workspacev1.UpdateProjectMemberRightsRequest) (*workspacev1.ProjectMember, error) {
-//	// Получаем текущие права участника
-//	member, err := s.svc.GetProjectMember(ctx, req.GetProjectId(), req.GetUserId())
-//	if err != nil {
-//		return nil, svcerr.ToStatus(err)
-//	}
-//	currentRights := member.Rights
-//
-//	// Применяем изменения (если поле присутствует в запросе)
-//	if req.ManagerRights != nil {
-//		currentRights.ManagerRights = req.GetManagerRights()
-//	}
-//	if req.ManagerMember != nil {
-//		currentRights.ManagerMember = req.GetManagerMember()
-//	}
-//	if req.ManagerProjects != nil {
-//		currentRights.ManagerProjects = req.GetManagerProjects()
-//	}
-//	if req.ManagerTasks != nil {
-//		currentRights.ManagerTasks = req.GetManagerTasks()
-//	}
-//
-//	// Вызов сервиса с полным набором прав
-//	updated, err := s.svc.UpdateProjectMemberRights(ctx, req.GetProjectId(), req.GetUserId(), currentRights)
-//	if err != nil {
-//		return nil, svcerr.ToStatus(err)
-//	}
-//	return &workspacev1.ProjectMember{
-//		ProjectId: updated.ProjectID,
-//		UserId:    updated.UserID,
-//		Rights:    projectMemberRightsToProto(updated.Rights),
-//	}, nil
-//}
 
 // ListProjectMembers возвращает список участников проекта
 func (s *ProjectsServer) ListProjectMembers(ctx context.Context, req *workspacev1.ListProjectMembersRequest) (*workspacev1.ListProjectMembersResponse, error) {
@@ -847,8 +766,78 @@ func (s *ProjectsServer) RejectProjectJoinRequest(ctx context.Context, req *work
 	return mapper.JoinRequestToProto(jr), nil
 }
 
-// подумать за реализацию
-//   - GetProjectMember(ctx, projectID, userID)
-//   - ListProjectMembers(ctx, projectID, pageSize, pageToken)
-//   - AddProjectMember(ctx, projectID, userID, rights)
-//   - RemoveProjectMember(ctx, projectID, userID)
+func (s *ProjectsServer) SetProjectAssessmentRequirements(
+	ctx context.Context,
+	req *workspacev1.SetProjectAssessmentRequirementsRequest,
+) (*workspacev1.Project, error) {
+
+	projectID := strings.TrimSpace(req.GetProjectId())
+
+	reqLog := s.log.With(
+		"grpc_method", "SetProjectAssessmentRequirements",
+		"project_id", projectID,
+		"requirements_count", len(req.GetRequirements()),
+	)
+
+	inputs := make([]models.ProjectAssessmentRequirementInput, 0, len(req.GetRequirements()))
+	for i, item := range req.GetRequirements() {
+		if item == nil {
+			reqLog.Warn("SetProjectAssessmentRequirements: nil requirement skipped", "index", i)
+			continue
+		}
+
+		inputs = append(inputs, models.ProjectAssessmentRequirementInput{
+			AssessmentID: item.GetAssessmentId(),
+			MinLevel:     item.GetMinLevel(),
+		})
+	}
+
+	reqLog.Info("SetProjectAssessmentRequirements: request received", "normalized_requirements_count", len(inputs))
+
+	project, err := s.svc.SetProjectAssessmentRequirements(ctx, projectID, inputs)
+	if err != nil {
+		reqLog.Error("SetProjectAssessmentRequirements: service failed", "err", err)
+		return nil, svcerr.ToStatus(err)
+	}
+
+	reqLog.Info(
+		"SetProjectAssessmentRequirements: success",
+		"result_requirements_count", len(project.AssessmentRequirements),
+	)
+
+	return mapper.ProjectToProto(&project), nil
+}
+
+func (s *ProjectsServer) GetMyProjectJoinEligibility(
+	ctx context.Context,
+	req *workspacev1.GetMyProjectJoinEligibilityRequest,
+) (*workspacev1.GetMyProjectJoinEligibilityResponse, error) {
+
+	projectID := strings.TrimSpace(req.GetProjectId())
+
+	reqLog := s.log.With(
+		"grpc_method", "GetMyProjectJoinEligibility",
+		"project_id", projectID,
+	)
+
+	reqLog.Info("GetMyProjectJoinEligibility: request received")
+
+	out, err := s.svc.GetMyProjectJoinEligibility(ctx, projectID)
+	if err != nil {
+		reqLog.Error("GetMyProjectJoinEligibility: service failed", "err", err)
+		return nil, svcerr.ToStatus(err)
+	}
+
+	reqLog.Info(
+		"GetMyProjectJoinEligibility: success",
+		"can_request_join", out.CanRequestJoin,
+		"is_project_open", out.IsProjectOpen,
+		"already_member", out.AlreadyMember,
+		"has_pending_join_request", out.HasPendingJoinRequest,
+		"has_pending_invitation", out.HasPendingInvitation,
+		"matched_requirements_count", out.MatchedRequirementsCount,
+		"total_requirements_count", out.TotalRequirementsCount,
+	)
+
+	return mapper.ProjectJoinEligibilityToProto(out), nil
+}

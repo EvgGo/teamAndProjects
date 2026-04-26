@@ -23,8 +23,8 @@ type CandidateSummaryProviderSSO struct {
 }
 
 func NewSSOCandidateSummaryProvider(
-	log *slog.Logger,
 	client ssov1.UserProfileClient,
+	log *slog.Logger,
 ) *CandidateSummaryProviderSSO {
 	return &CandidateSummaryProviderSSO{
 		client: client,

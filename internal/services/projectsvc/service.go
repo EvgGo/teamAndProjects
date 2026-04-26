@@ -19,17 +19,20 @@ import (
 )
 
 type Deps struct {
-	Tx                       TxManager
-	Projects                 ProjectsRepo
-	ProjectMembers           ProjectMemberRepo
-	JoinReqs                 ProjectJoinRequestsRepo
-	JoinReqsDetails          ProjectJoinRequestDetailsRepo
-	CandidateSummaryProvider CandidateSummaryProvider
-	Public                   ProjectPublicRepo
-	Log                      *slog.Logger
-	Teams                    TeamsRepo
-	TeamMembers              TeamMembersRepo
-	ProjectInvitations       ProjectInvitationsRepo
+	Tx                            TxManager
+	Projects                      ProjectsRepo
+	ProjectMembers                ProjectMemberRepo
+	JoinReqs                      ProjectJoinRequestsRepo
+	JoinReqsDetails               ProjectJoinRequestDetailsRepo
+	CandidateSummaryProvider      CandidateSummaryProvider
+	ProjectAssessmentRequirements ProjectAssessmentRequirementsRepository
+	Assessments                   AssessmentCatalogRepository
+	MyAssessmentResultsProvider   MyAssessmentResultsProvider
+	Public                        ProjectPublicRepo
+	Log                           *slog.Logger
+	Teams                         TeamsRepo
+	TeamMembers                   TeamMembersRepo
+	ProjectInvitations            ProjectInvitationsRepo
 
 	ViewerProfile sso.ViewerProfileClient
 
@@ -153,107 +156,6 @@ func (s *Service) GetProject(ctx context.Context, projectID string) (models.Proj
 
 	return project, nil
 }
-
-//// CreateProject - без team_id: сервис сам создает команду и права
-//func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectParams) (models.Project, error) {
-//
-//	caller := authctx.MustUserID(ctx)
-//	if caller == "" {
-//		s.Deps.Log.Warn("CreateProject: неаутентифицированный вызов")
-//		return models.Project{}, repo.ErrUnauthenticated
-//	}
-//	s.Deps.Log.Info("CreateProject: запрос", "caller", caller, "name", in.Name, "description", in.Description,
-//		"status", in.Status, "isOpen", in.IsOpen, "startedAt", in.StartedAt, "finishedAt", in.FinishedAt)
-//
-//	if strings.TrimSpace(in.Name) == "" {
-//		s.Deps.Log.Error("CreateProject: пустое название проекта", "caller", caller)
-//		return models.Project{}, repo.ErrInvalidInput
-//	}
-//
-//	in.StartedAt = dateUTC(in.StartedAt)
-//	if in.FinishedAt != nil {
-//		t := dateUTC(*in.FinishedAt)
-//		in.FinishedAt = &t
-//	}
-//
-//	now := s.Deps.Clock()
-//	_ = now
-//
-//	var out models.Project
-//
-//	err := s.Deps.Tx.WithinTx(ctx, func(txCtx context.Context) error {
-//		// create team
-//		teamName := normalizeTeamName(in.Name, in.TeamName)
-//		s.Deps.Log.Debug("CreateProject: создание команды", "teamName", teamName, "caller", caller)
-//		team, err := s.Deps.Teams.Create(txCtx, models.CreateTeamInput{
-//			Name:        teamName,
-//			Description: "",
-//			IsInvitable: true,
-//			IsJoinable:  true,
-//			FounderID:   caller,
-//			LeadID:      caller,
-//		})
-//		if err != nil {
-//			s.Deps.Log.Error("CreateProject: ошибка создания команды", "teamName", teamName, "caller", caller, "error", err)
-//			return err
-//		}
-//		s.Deps.Log.Debug("CreateProject: команда создана", "teamID", team.ID, "caller", caller)
-//
-//		// ensure team member
-//		if err = s.Deps.TeamMembers.EnsureMember(txCtx, team.ID, caller, ""); err != nil {
-//			s.Deps.Log.Error("CreateProject: ошибка добавления создателя в команду", "teamID", team.ID, "caller", caller, "error", err)
-//			return err
-//		}
-//		s.Deps.Log.Debug("CreateProject: создатель добавлен в команду", "teamID", team.ID, "caller", caller)
-//
-//		// create project
-//		p, err := s.Deps.Projects.Create(txCtx, models.CreateProjectInput{
-//			TeamID:      team.ID,
-//			CreatorID:   caller,
-//			Name:        strings.TrimSpace(in.Name),
-//			Description: strings.TrimSpace(in.Description),
-//			Status:      in.Status,
-//			IsOpen:      in.IsOpen,
-//			StartedAt:   in.StartedAt,
-//			FinishedAt:  in.FinishedAt,
-//			SkillIDs:    in.SkillIDs,
-//		})
-//		if err != nil {
-//			s.Deps.Log.Error("CreateProject: ошибка создания проекта", "teamID", team.ID, "caller", caller, "error", err)
-//			return err
-//		}
-//		s.Deps.Log.Debug("CreateProject: проект создан", "projectID", p.ID, "caller", caller)
-//
-//		addMember := models.AddProjectMemberInput{
-//			ProjectID: p.ID,
-//			UserID:    caller,
-//			Rights:    fullRights(),
-//		}
-//
-//		// project_members full rights
-//		_, err = s.Deps.ProjectMembers.AddMember(txCtx, addMember)
-//		if err != nil {
-//			if errors.Is(err, repo.ErrAlreadyExists) {
-//				s.Deps.Log.Error("CreateProject: конфликт - участник уже существует", "projectID", p.ID, "caller", caller)
-//				return repo.ErrConflict
-//			}
-//			s.Deps.Log.Error("CreateProject: ошибка добавления прав участника проекта", "projectID", p.ID, "caller", caller, "error", err)
-//			return err
-//		}
-//		s.Deps.Log.Debug("CreateProject: права участника проекта назначены", "projectID", p.ID, "caller", caller)
-//
-//		out = p
-//		return nil
-//	})
-//
-//	if err != nil {
-//		s.Deps.Log.Error("CreateProject: ошибка транзакции", "caller", caller, "error", err)
-//		return models.Project{}, err
-//	}
-//
-//	s.Deps.Log.Info("CreateProject: проект успешно создан", "projectID", out.ID, "caller", caller)
-//	return out, nil
-//}
 
 func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectParams) (models.Project, error) {
 	caller := authctx.MustUserID(ctx)
@@ -675,29 +577,34 @@ func (s *Service) ListPublicProjects(ctx context.Context, filter models.ListPubl
 }
 
 func (s *Service) RequestJoinProject(ctx context.Context, projectID, message string) (models.ProjectJoinRequest, error) {
+
 	caller := authctx.MustUserID(ctx)
 	if caller == "" {
 		s.Deps.Log.Warn("RequestJoinProject: неаутентифицированный вызов", "projectID", projectID)
 		return models.ProjectJoinRequest{}, repo.ErrUnauthenticated
 	}
+
 	s.Deps.Log.Info("RequestJoinProject: запрос", "projectID", projectID, "caller", caller, "message", message)
 
-	p, err := s.Deps.Projects.GetByID(ctx, projectID)
+	eligibility, err := s.getMyProjectJoinEligibility(ctx, projectID, caller)
 	if err != nil {
-		s.Deps.Log.Error("RequestJoinProject: ошибка получения проекта", "projectID", projectID, "caller", caller, "error", err)
+		s.Deps.Log.Error("RequestJoinProject: ошибка eligibility-проверки", "projectID", projectID, "caller", caller, "error", err)
 		return models.ProjectJoinRequest{}, err
-	}
-	if !p.IsOpen {
-		s.Deps.Log.Warn("RequestJoinProject: проект закрыт для заявок", "projectID", projectID, "caller", caller)
-		return models.ProjectJoinRequest{}, repo.ErrConflict
 	}
 
-	if _, err = s.Deps.ProjectMembers.GetMember(ctx, projectID, caller); err == nil {
-		s.Deps.Log.Warn("RequestJoinProject: пользователь уже участник", "projectID", projectID, "caller", caller)
+	if !eligibility.CanRequestJoin {
+		s.Deps.Log.Warn(
+			"RequestJoinProject: пользователь не проходит precheck",
+			"projectID", projectID,
+			"caller", caller,
+			"isProjectOpen", eligibility.IsProjectOpen,
+			"alreadyMember", eligibility.AlreadyMember,
+			"hasPendingJoinRequest", eligibility.HasPendingJoinRequest,
+			"hasPendingInvitation", eligibility.HasPendingInvitation,
+			"matchedRequirementsCount", eligibility.MatchedRequirementsCount,
+			"totalRequirementsCount", eligibility.TotalRequirementsCount,
+		)
 		return models.ProjectJoinRequest{}, repo.ErrConflict
-	} else if !errors.Is(err, repo.ErrNotFound) {
-		s.Deps.Log.Error("RequestJoinProject: ошибка проверки членства", "projectID", projectID, "caller", caller, "error", err)
-		return models.ProjectJoinRequest{}, err
 	}
 
 	req, err := s.Deps.JoinReqs.Create(ctx, projectID, caller, message)
@@ -705,6 +612,7 @@ func (s *Service) RequestJoinProject(ctx context.Context, projectID, message str
 		s.Deps.Log.Error("RequestJoinProject: ошибка создания заявки", "projectID", projectID, "caller", caller, "error", err)
 		return models.ProjectJoinRequest{}, err
 	}
+
 	s.Deps.Log.Info("RequestJoinProject: заявка создана", "requestID", req.ID, "projectID", projectID, "caller", caller)
 	return req, nil
 }
@@ -1128,6 +1036,216 @@ func (s *Service) ListMyProjectJoinRequests(
 	}
 
 	return s.Deps.JoinReqs.ListMyProjectJoinRequests(ctx, filter)
+}
+
+func (s *Service) GetMyProjectJoinEligibility(
+	ctx context.Context,
+	projectID string,
+) (models.ProjectJoinEligibility, error) {
+
+	caller := authctx.MustUserID(ctx)
+	if caller == "" {
+		return models.ProjectJoinEligibility{}, repo.ErrUnauthenticated
+	}
+
+	return s.getMyProjectJoinEligibility(ctx, projectID, caller)
+}
+
+func (s *Service) getMyProjectJoinEligibility(
+	ctx context.Context,
+	projectID string,
+	caller string,
+) (models.ProjectJoinEligibility, error) {
+
+	projectID = strings.TrimSpace(projectID)
+	caller = strings.TrimSpace(caller)
+
+	reqLog := s.Deps.Log.With(
+		"service_method", "getMyProjectJoinEligibility",
+		"projectID", projectID,
+		"caller", caller,
+	)
+
+	if projectID == "" {
+		err := fmt.Errorf("get my project join eligibility: empty projectID: %w", repo.ErrInvalidInput)
+		reqLog.Error("invalid input", "err", err)
+		return models.ProjectJoinEligibility{}, err
+	}
+
+	if caller == "" {
+		err := fmt.Errorf("get my project join eligibility: empty caller: %w", repo.ErrInvalidInput)
+		reqLog.Error("invalid input", "err", err)
+		return models.ProjectJoinEligibility{}, err
+	}
+
+	project, err := s.Deps.Projects.GetByID(ctx, projectID)
+	if err != nil {
+		wrappedErr := fmt.Errorf("get my project join eligibility: load project %s: %w", projectID, err)
+		reqLog.Error("failed to load project", "err", wrappedErr)
+		return models.ProjectJoinEligibility{}, wrappedErr
+	}
+
+	out := models.ProjectJoinEligibility{
+		ProjectID:                project.ID,
+		IsProjectOpen:            project.IsOpen,
+		Checks:                   make([]models.ProjectAssessmentRequirementCheck, 0, len(project.AssessmentRequirements)),
+		CanRequestJoin:           false,
+		TotalRequirementsCount:   int32(len(project.AssessmentRequirements)),
+		MatchedRequirementsCount: 0,
+	}
+
+	// Создатель проекта не должен подавать заявку в свой же проект
+	if project.CreatorID == caller {
+		out.AlreadyMember = true
+
+		reqLog.Info(
+			"project join eligibility calculated with early exit for project creator",
+			"isProjectOpen", out.IsProjectOpen,
+			"alreadyMember", out.AlreadyMember,
+			"hasPendingJoinRequest", out.HasPendingJoinRequest,
+			"hasPendingInvitation", out.HasPendingInvitation,
+			"matchedRequirementsCount", out.MatchedRequirementsCount,
+			"totalRequirementsCount", out.TotalRequirementsCount,
+			"canRequestJoin", out.CanRequestJoin,
+		)
+
+		return out, nil
+	}
+
+	if _, err = s.Deps.ProjectMembers.GetMember(ctx, projectID, caller); err == nil {
+		out.AlreadyMember = true
+	} else if !errors.Is(err, repo.ErrNotFound) {
+		wrappedErr := fmt.Errorf("get my project join eligibility: check membership for project %s and caller %s: %w", projectID, caller, err)
+		reqLog.Error("failed to check project membership", "err", wrappedErr)
+		return models.ProjectJoinEligibility{}, wrappedErr
+	}
+
+	// Если пользователь уже участник, дальше проверки не нужны
+	if out.AlreadyMember {
+		reqLog.Info(
+			"project join eligibility calculated with early exit for existing member",
+			"isProjectOpen", out.IsProjectOpen,
+			"alreadyMember", out.AlreadyMember,
+			"hasPendingJoinRequest", out.HasPendingJoinRequest,
+			"hasPendingInvitation", out.HasPendingInvitation,
+			"matchedRequirementsCount", out.MatchedRequirementsCount,
+			"totalRequirementsCount", out.TotalRequirementsCount,
+			"canRequestJoin", out.CanRequestJoin,
+		)
+
+		return out, nil
+	}
+
+	// Если проект закрыт, дальше проверки не обязательны
+	if !out.IsProjectOpen {
+		reqLog.Info(
+			"project join eligibility calculated with early exit for closed project",
+			"isProjectOpen", out.IsProjectOpen,
+			"alreadyMember", out.AlreadyMember,
+			"hasPendingJoinRequest", out.HasPendingJoinRequest,
+			"hasPendingInvitation", out.HasPendingInvitation,
+			"matchedRequirementsCount", out.MatchedRequirementsCount,
+			"totalRequirementsCount", out.TotalRequirementsCount,
+			"canRequestJoin", out.CanRequestJoin,
+		)
+
+		return out, nil
+	}
+
+	hasPendingJoinRequest, err := s.Deps.JoinReqs.HasPendingByProjectAndRequester(ctx, projectID, caller)
+	if err != nil {
+		wrappedErr := fmt.Errorf("get my project join eligibility: check pending join request for project %s and caller %s: %w", projectID, caller, err)
+		reqLog.Error("failed to check pending join request", "err", wrappedErr)
+		return models.ProjectJoinEligibility{}, wrappedErr
+	}
+	out.HasPendingJoinRequest = hasPendingJoinRequest
+
+	if out.HasPendingJoinRequest {
+		reqLog.Info(
+			"project join eligibility calculated with early exit for pending join request",
+			"isProjectOpen", out.IsProjectOpen,
+			"alreadyMember", out.AlreadyMember,
+			"hasPendingJoinRequest", out.HasPendingJoinRequest,
+			"hasPendingInvitation", out.HasPendingInvitation,
+			"matchedRequirementsCount", out.MatchedRequirementsCount,
+			"totalRequirementsCount", out.TotalRequirementsCount,
+			"canRequestJoin", out.CanRequestJoin,
+		)
+
+		return out, nil
+	}
+
+	hasPendingInvitation, err := s.Deps.ProjectInvitations.HasPendingByProjectAndInvitedUser(ctx, projectID, caller)
+	if err != nil {
+		wrappedErr := fmt.Errorf("get my project join eligibility: check pending invitation for project %s and caller %s: %w", projectID, caller, err)
+		reqLog.Error("failed to check pending invitation", "err", wrappedErr)
+		return models.ProjectJoinEligibility{}, wrappedErr
+	}
+	out.HasPendingInvitation = hasPendingInvitation
+
+	if out.HasPendingInvitation {
+		reqLog.Info(
+			"project join eligibility calculated with early exit for pending invitation",
+			"isProjectOpen", out.IsProjectOpen,
+			"alreadyMember", out.AlreadyMember,
+			"hasPendingJoinRequest", out.HasPendingJoinRequest,
+			"hasPendingInvitation", out.HasPendingInvitation,
+			"matchedRequirementsCount", out.MatchedRequirementsCount,
+			"totalRequirementsCount", out.TotalRequirementsCount,
+			"canRequestJoin", out.CanRequestJoin,
+		)
+
+		return out, nil
+	}
+
+	savedResults, err := s.Deps.MyAssessmentResultsProvider.GetMySavedAssessmentResults(ctx)
+	if err != nil {
+		wrappedErr := fmt.Errorf("get my project join eligibility: load saved assessment results for caller %s: %w", caller, err)
+		reqLog.Error("failed to load saved assessment results", "err", wrappedErr)
+		return models.ProjectJoinEligibility{}, wrappedErr
+	}
+
+	var matched int32
+
+	for _, requirement := range project.AssessmentRequirements {
+		check := models.ProjectAssessmentRequirementCheck{
+			Requirement: requirement,
+		}
+
+		if result, ok := savedResults[requirement.AssessmentID]; ok {
+			check.HasSavedResult = true
+			check.CurrentLevel = result.Level
+			check.MeetsRequirement = result.Level >= requirement.MinLevel
+			check.NeedsImproveLevel = !check.MeetsRequirement
+		} else {
+			check.HasSavedResult = false
+			check.CurrentLevel = 0
+			check.MeetsRequirement = false
+			check.NeedsPassTest = true
+		}
+
+		if check.MeetsRequirement {
+			matched++
+		}
+
+		out.Checks = append(out.Checks, check)
+	}
+
+	out.MatchedRequirementsCount = matched
+	out.CanRequestJoin = out.MatchedRequirementsCount == out.TotalRequirementsCount
+
+	reqLog.Info(
+		"project join eligibility calculated",
+		"isProjectOpen", out.IsProjectOpen,
+		"alreadyMember", out.AlreadyMember,
+		"hasPendingJoinRequest", out.HasPendingJoinRequest,
+		"hasPendingInvitation", out.HasPendingInvitation,
+		"matchedRequirementsCount", out.MatchedRequirementsCount,
+		"totalRequirementsCount", out.TotalRequirementsCount,
+		"canRequestJoin", out.CanRequestJoin,
+	)
+
+	return out, nil
 }
 
 func resolveEffectivePublicProjectSort(

@@ -59,7 +59,8 @@ func New(
 	joinReqsDetailsRepo := repo.NewProjectJoinRequestDetailsRepo(pool, log)
 	projectInvitations := repo.NewProjectInvitationsRepo(pool, log)
 	teamMembersDeatils := repo.NewTeamMembersRepo(pool)
-
+	assessmentsRepo := repo.NewAssessmentCatalogRepo(pool)
+	projectAssessmentRequirements := repo.NewProjectAssessmentRequirementsRepo(pool)
 	tx := repo.NewTxManager(pool)
 
 	teamsService := teamsvc.New(teamsvc.Deps{
@@ -74,22 +75,26 @@ func New(
 		return cleanupOnErr(fmt.Errorf("init teams service: nil"))
 	}
 
-	candidateSummaryProvider := sso.NewSSOCandidateSummaryProvider(log, viewerProfileClient)
+	candidateSummaryProvider := sso.NewSSOCandidateSummaryProvider(viewerProfileClient, log)
+	myAssessmentResultsProvider := sso.NewMyAssessmentResultsProviderSSO(viewerProfileClient, log)
 
 	projectsService := projectsvc.New(projectsvc.Deps{
-		Tx:                       tx,
-		Projects:                 projectsRepo,
-		ProjectMembers:           projectMembersRepo,
-		JoinReqs:                 joinReqRepo,
-		JoinReqsDetails:          joinReqsDetailsRepo,
-		CandidateSummaryProvider: candidateSummaryProvider,
-		ProjectInvitations:       projectInvitations,
-		Public:                   publicRepo,
-		Log:                      log,
-		Teams:                    teamRepo,
-		TeamMembers:              teamMembersRepo,
-		ViewerProfile:            viewerProfileClient,
-		Clock:                    time.Now,
+		Tx:                            tx,
+		Projects:                      projectsRepo,
+		ProjectMembers:                projectMembersRepo,
+		JoinReqs:                      joinReqRepo,
+		JoinReqsDetails:               joinReqsDetailsRepo,
+		CandidateSummaryProvider:      candidateSummaryProvider,
+		Assessments:                   assessmentsRepo,
+		ProjectAssessmentRequirements: projectAssessmentRequirements,
+		MyAssessmentResultsProvider:   myAssessmentResultsProvider,
+		ProjectInvitations:            projectInvitations,
+		Public:                        publicRepo,
+		Log:                           log,
+		Teams:                         teamRepo,
+		TeamMembers:                   teamMembersRepo,
+		ViewerProfile:                 viewerProfileClient,
+		Clock:                         time.Now,
 	})
 	if projectsService == nil {
 		return cleanupOnErr(fmt.Errorf("init projects service: nil"))

@@ -641,3 +641,40 @@ func scanProjectJoinRequest(row interface{ Scan(dest ...any) error }) (models.Pr
 
 	return req, nil
 }
+
+func (r *ProjectJoinRequestRepo) HasPendingByProjectAndRequester(
+	ctx context.Context,
+	projectID string,
+	requesterID string,
+) (bool, error) {
+
+	pid, err := parseUUID(projectID)
+	if err != nil {
+		return false, err
+	}
+	rid, err := parseUUID(requesterID)
+	if err != nil {
+		return false, err
+	}
+
+	const q = `
+		SELECT EXISTS (
+			SELECT 1
+			FROM project_join_requests
+			WHERE project_id = $1
+			  AND requester_id = $2
+			  AND status = 'pending'
+		)
+	`
+
+	var exists bool
+	if err = r.pool.QueryRow(ctx, q, pid, rid).Scan(&exists); err != nil {
+		return false, fmt.Errorf(
+			"has pending invitation query failed err %s mappErr %w",
+			err.Error(),
+			mapDBErr(err),
+		)
+	}
+
+	return exists, nil
+}

@@ -14,16 +14,17 @@ func ProjectPublicToProto(p *models.ProjectPublic) *workspacev1.ProjectPublic {
 	}
 
 	out := &workspacev1.ProjectPublic{
-		Id:          p.ID,
-		TeamId:      p.TeamID,
-		Name:        p.Name,
-		Description: p.Description,
-		Status:      ProjectStatusFromModel(p.Status),
-		IsOpen:      p.IsOpen,
-		StartedAt:   DateFromTime(p.StartedAt),
-		CreatedAt:   DateFromTime(p.CreatedAt),
-		SkillIds:    IntSkillIDsToProto(p.SkillIDs),
-		Skills:      ProjectSkillsToProto(p.Skills),
+		Id:                     p.ID,
+		TeamId:                 p.TeamID,
+		Name:                   p.Name,
+		Description:            p.Description,
+		Status:                 ProjectStatusFromModel(p.Status),
+		IsOpen:                 p.IsOpen,
+		StartedAt:              DateFromTime(p.StartedAt),
+		CreatedAt:              DateFromTime(p.CreatedAt),
+		SkillIds:               IntSkillIDsToProto(p.SkillIDs),
+		Skills:                 ProjectSkillsToProto(p.Skills),
+		AssessmentRequirements: ProjectAssessmentRequirementsToProto(p.AssessmentRequirements),
 	}
 
 	if p.FinishedAt != nil {

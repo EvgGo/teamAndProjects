@@ -769,6 +769,43 @@ func (r *ProjectInvitationsRepo) GetMyProjectInvitationByID(
 	return &invitation, nil
 }
 
+func (r *ProjectInvitationsRepo) HasPendingByProjectAndInvitedUser(
+	ctx context.Context,
+	projectID string,
+	userID string,
+) (bool, error) {
+
+	pid, err := parseUUID(projectID)
+	if err != nil {
+		return false, err
+	}
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return false, err
+	}
+
+	const q = `
+		SELECT EXISTS (
+			SELECT 1
+			FROM project_invitations
+			WHERE project_id = $1
+			  AND invited_user_id = $2
+			  AND status = $3
+		)
+	`
+
+	var exists bool
+	if err = r.pool.QueryRow(ctx, q, pid, uid, models.ProjectInvitationStatusPending).Scan(&exists); err != nil {
+		return false, fmt.Errorf(
+			"has pending invitation query failed err %s mappErr %w",
+			err.Error(),
+			mapDBErr(err),
+		)
+	}
+
+	return exists, nil
+}
+
 func scanProjectInvitation(row interface{ Scan(dest ...any) error }) (models.ProjectInvitation, error) {
 
 	var m models.ProjectInvitation

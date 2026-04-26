@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/gofrs/uuid/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"strconv"
 	"strings"
@@ -265,7 +266,109 @@ func (r *ProjectPublicRepo) ListPublic(
 		return nil, "", err
 	}
 
+	if err = r.attachPublicProjectSkills(ctx, qr, res); err != nil {
+		return nil, "", err
+	}
+
+	if err = r.attachPublicProjectAssessmentRequirements(ctx, qr, res); err != nil {
+		return nil, "", err
+	}
+
 	return res, next, nil
+}
+
+func (r *ProjectPublicRepo) attachPublicProjectAssessmentRequirements(
+	ctx context.Context,
+	qr Querier,
+	rows []models.PublicProjectRow,
+) error {
+
+	if len(rows) == 0 {
+		return nil
+	}
+
+	projectIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if strings.TrimSpace(row.Project.ID) != "" {
+			projectIDs = append(projectIDs, row.Project.ID)
+		}
+	}
+
+	projectIDs = utils.UniqueNonEmptyStrings(projectIDs)
+	if len(projectIDs) == 0 {
+		return nil
+	}
+
+	projectUUIDs := make([]uuid.UUID, 0, len(projectIDs))
+	for _, projectID := range projectIDs {
+		pid, err := parseUUID(projectID)
+		if err != nil {
+			return err
+		}
+		projectUUIDs = append(projectUUIDs, pid)
+	}
+
+	const q = `
+		SELECT
+			project_id::text,
+			assessment_id,
+			assessment_code,
+			assessment_title,
+			subject_id,
+			subject_code,
+			subject_title,
+			mode,
+			min_level
+		FROM project_assessment_requirements
+		WHERE project_id = ANY($1)
+		ORDER BY project_id, assessment_title, assessment_id
+	`
+
+	dbRows, err := qr.Query(ctx, q, projectUUIDs)
+	if err != nil {
+		return mapDBErr(err)
+	}
+	defer dbRows.Close()
+
+	requirementsByProjectID := make(map[string][]models.ProjectAssessmentRequirement, len(projectIDs))
+
+	for dbRows.Next() {
+		var projectID string
+		var item models.ProjectAssessmentRequirement
+		var modeDB int16
+
+		if err := dbRows.Scan(
+			&projectID,
+			&item.AssessmentID,
+			&item.AssessmentCode,
+			&item.AssessmentTitle,
+			&item.SubjectID,
+			&item.SubjectCode,
+			&item.SubjectTitle,
+			&modeDB,
+			&item.MinLevel,
+		); err != nil {
+			return mapDBErr(err)
+		}
+
+		mode, err := requirementModeFromDBSmallint(modeDB)
+		if err != nil {
+			return err
+		}
+
+		item.Mode = mode
+		requirementsByProjectID[projectID] = append(requirementsByProjectID[projectID], item)
+	}
+
+	if err := dbRows.Err(); err != nil {
+		return mapDBErr(err)
+	}
+
+	for i := range rows {
+		rows[i].Project.AssessmentRequirements = requirementsByProjectID[rows[i].Project.ID]
+	}
+
+	return nil
 }
 
 func (r *ProjectPublicRepo) attachPublicProjectSkills(ctx context.Context, qr Querier, rowsOut []models.PublicProjectRow) error {

@@ -3,11 +3,14 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"github.com/gofrs/uuid/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"strings"
 	"teamAndProjects/internal/models"
+	"teamAndProjects/pkg/utils"
 	"time"
 )
 
@@ -90,7 +93,81 @@ func (r *ProjectsRepo) getByIDFrom(ctx context.Context, qr Querier, projectID st
 	project.Skills = skills
 	project.MyRights = models.ProjectRights{}
 
+	requirements, err := r.getProjectAssessmentRequirements(ctx, qr, project.ID)
+	if err != nil {
+		return models.Project{}, err
+	}
+
+	project.AssessmentRequirements = requirements
+
 	return project, nil
+}
+
+func (r *ProjectsRepo) getProjectAssessmentRequirements(
+	ctx context.Context,
+	qr Querier,
+	projectID string,
+) ([]models.ProjectAssessmentRequirement, error) {
+
+	pid, err := parseUUID(projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	const q = `
+		SELECT
+			assessment_id,
+			assessment_code,
+			assessment_title,
+			subject_id,
+			subject_code,
+			subject_title,
+			mode,
+			min_level
+		FROM project_assessment_requirements
+		WHERE project_id = $1
+		ORDER BY assessment_title, assessment_id
+	`
+
+	rows, err := qr.Query(ctx, q, pid)
+	if err != nil {
+		return nil, mapDBErr(err)
+	}
+	defer rows.Close()
+
+	var out []models.ProjectAssessmentRequirement
+
+	for rows.Next() {
+		var item models.ProjectAssessmentRequirement
+		var modeDB int16
+
+		if err = rows.Scan(
+			&item.AssessmentID,
+			&item.AssessmentCode,
+			&item.AssessmentTitle,
+			&item.SubjectID,
+			&item.SubjectCode,
+			&item.SubjectTitle,
+			&modeDB,
+			&item.MinLevel,
+		); err != nil {
+			return nil, mapDBErr(err)
+		}
+
+		mode, err := requirementModeFromDBSmallint(modeDB)
+		if err != nil {
+			return nil, err
+		}
+
+		item.Mode = mode
+		out = append(out, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, mapDBErr(err)
+	}
+
+	return out, nil
 }
 
 func (r *ProjectsRepo) DeleteProject(ctx context.Context, projectID string) error {
@@ -288,6 +365,21 @@ func (r *ProjectsRepo) ListProjects(ctx context.Context, filter *models.Projects
 		return nil, "", err
 	}
 
+	// добавляем требования для вступления в проект
+	projectIDs := make([]string, 0, len(projects))
+	for _, project := range projects {
+		projectIDs = append(projectIDs, project.ID)
+	}
+
+	requirementsByProjectID, err := r.getProjectAssessmentRequirementsByProjectIDs(ctx, qr, projectIDs)
+	if err != nil {
+		return nil, "", err
+	}
+
+	for i := range projects {
+		projects[i].AssessmentRequirements = requirementsByProjectID[projects[i].ID]
+	}
+
 	return projects, nextToken, nil
 }
 
@@ -315,79 +407,150 @@ func (r *ProjectsRepo) HasUserCreatedProjectsInTeam(
 	return exists, nil
 }
 
-func (r *ProjectsRepo) getProjectSkillIDs(ctx context.Context, qr Querier, projectID string) ([]int, error) {
+func (r *ProjectsRepo) GetByIDForActor(ctx context.Context, projectID, actorID string) (models.Project, error) {
+	qr := querierFromCtx(ctx, r.pool)
 
-	const q = `
-		SELECT skill_id
-		FROM project_skills
-		WHERE project_id::text = $1
-		ORDER BY skill_id ASC
+	projectID = strings.TrimSpace(projectID)
+	actorID = strings.TrimSpace(actorID)
+
+	if projectID == "" || actorID == "" {
+		return models.Project{}, ErrInvalidInput
+	}
+
+	project, err := r.getByIDFrom(ctx, qr, projectID)
+	if err != nil {
+		return models.Project{}, err
+	}
+
+	// Создатель проекта имеет все project-права
+	if project.CreatorID == actorID {
+		project.MyRights = models.ProjectRights{
+			ManagerRights:   true,
+			ManagerMember:   true,
+			ManagerProjects: true,
+			ManagerTasks:    true,
+		}
+		return project, nil
+	}
+
+	pid, err := parseUUID(projectID)
+	if err != nil {
+		return models.Project{}, err
+	}
+
+	aid, err := parseUUID(actorID)
+	if err != nil {
+		return models.Project{}, err
+	}
+
+	const query = `
+		SELECT
+			manager_rights,
+			manager_member,
+			manager_projects,
+			manager_tasks
+		FROM project_members
+		WHERE project_id = $1
+		  AND user_id = $2
 	`
 
-	rows, err := qr.Query(ctx, q, projectID)
+	var rights models.ProjectRights
+
+	err = qr.QueryRow(ctx, query, pid, aid).Scan(
+		&rights.ManagerRights,
+		&rights.ManagerMember,
+		&rights.ManagerProjects,
+		&rights.ManagerTasks,
+	)
 	if err != nil {
-		return nil, mapDBErr(err)
-	}
-	defer rows.Close()
-
-	out := make([]int, 0)
-	for rows.Next() {
-		var skillID int
-		if err = rows.Scan(&skillID); err != nil {
-			return nil, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			project.MyRights = models.ProjectRights{}
+			return project, nil
 		}
-		out = append(out, skillID)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, err
+		return models.Project{}, mapDBErr(err)
 	}
 
-	return out, nil
+	project.MyRights = rights
+	return project, nil
 }
 
-func (r *ProjectsRepo) attachProjectSkillIDs(ctx context.Context, projects []models.Project) error {
+func (r *ProjectsRepo) getProjectAssessmentRequirementsByProjectIDs(
+	ctx context.Context,
+	qr Querier,
+	projectIDs []string,
+) (map[string][]models.ProjectAssessmentRequirement, error) {
 
-	if len(projects) == 0 {
-		return nil
+	projectIDs = utils.UniqueNonEmptyStrings(projectIDs)
+	if len(projectIDs) == 0 {
+		return map[string][]models.ProjectAssessmentRequirement{}, nil
 	}
 
-	projectIDs := make([]string, 0, len(projects))
-	indexByID := make(map[string]int, len(projects))
-
-	for i := range projects {
-		projectIDs = append(projectIDs, projects[i].ID)
-		indexByID[projects[i].ID] = i
+	projectUUIDs := make([]uuid.UUID, 0, len(projectIDs))
+	for _, projectID := range projectIDs {
+		pid, err := parseUUID(projectID)
+		if err != nil {
+			return nil, err
+		}
+		projectUUIDs = append(projectUUIDs, pid)
 	}
 
 	const q = `
 		SELECT
 			project_id::text,
-			skill_id
-		FROM project_skills
-		WHERE project_id::text = ANY($1::text[])
-		ORDER BY project_id, skill_id
+			assessment_id,
+			assessment_code,
+			assessment_title,
+			subject_id,
+			subject_code,
+			subject_title,
+			mode,
+			min_level
+		FROM project_assessment_requirements
+		WHERE project_id = ANY($1)
+		ORDER BY project_id, assessment_title, assessment_id
 	`
 
-	rows, err := r.pool.Query(ctx, q, projectIDs)
+	rows, err := qr.Query(ctx, q, projectUUIDs)
 	if err != nil {
-		return mapDBErr(err)
+		return nil, mapDBErr(err)
 	}
 	defer rows.Close()
 
+	out := make(map[string][]models.ProjectAssessmentRequirement, len(projectIDs))
+
 	for rows.Next() {
 		var projectID string
-		var skillID int
+		var item models.ProjectAssessmentRequirement
+		var modeDB int16
 
-		if err = rows.Scan(&projectID, &skillID); err != nil {
-			return err
+		if err = rows.Scan(
+			&projectID,
+			&item.AssessmentID,
+			&item.AssessmentCode,
+			&item.AssessmentTitle,
+			&item.SubjectID,
+			&item.SubjectCode,
+			&item.SubjectTitle,
+			&modeDB,
+			&item.MinLevel,
+		); err != nil {
+			return nil, mapDBErr(err)
 		}
 
-		if idx, ok := indexByID[projectID]; ok {
-			projects[idx].SkillIDs = append(projects[idx].SkillIDs, skillID)
+		mode, err := requirementModeFromDBSmallint(modeDB)
+		if err != nil {
+			return nil, err
 		}
+
+		item.Mode = mode
+		out[projectID] = append(out[projectID], item)
 	}
 
-	return rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, mapDBErr(err)
+	}
+
+	return out, nil
 }
 
 func (r *ProjectsRepo) getProjectSkills(ctx context.Context, qr Querier, projectID string) ([]int, []models.ProjectSkill, error) {
