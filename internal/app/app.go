@@ -61,6 +61,8 @@ func New(
 	teamMembersDeatils := repo.NewTeamMembersRepo(pool)
 	assessmentsRepo := repo.NewAssessmentCatalogRepo(pool)
 	projectAssessmentRequirements := repo.NewProjectAssessmentRequirementsRepo(pool)
+	projectStagesRepo := repo.NewProjectStagesRepo(pool, log)
+
 	tx := repo.NewTxManager(pool)
 
 	teamsService := teamsvc.New(teamsvc.Deps{
@@ -90,6 +92,7 @@ func New(
 		MyAssessmentResultsProvider:   myAssessmentResultsProvider,
 		ProjectInvitations:            projectInvitations,
 		Public:                        publicRepo,
+		ProjectStages:                 projectStagesRepo,
 		Log:                           log,
 		Teams:                         teamRepo,
 		TeamMembers:                   teamMembersRepo,

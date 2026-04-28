@@ -34,6 +34,8 @@ type Project struct {
 	MyRights ProjectRights
 
 	AssessmentRequirements []ProjectAssessmentRequirement
+
+	StagesSummary *ProjectStagesSummary
 }
 
 type ProjectSkill struct {

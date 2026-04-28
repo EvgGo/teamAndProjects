@@ -38,5 +38,6 @@ func ProjectToProto(p *models.Project) *workspacev1.Project {
 		Skills:                 skills,
 		MyRights:               ProjectRightsToProto(p.MyRights),
 		AssessmentRequirements: ProjectAssessmentRequirementsToProto(p.AssessmentRequirements),
+		StagesSummary:          ProjectStagesSummaryToProto(p.StagesSummary),
 	}
 }

@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -29,20 +30,29 @@ func mapDBErr(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
-		case "23505": // unique_violation
+		case "23505":
+			if pgErr.ConstraintName == "ux_project_stages_project_position" {
+				return ErrProjectStagePositionTaken
+			}
 			return ErrAlreadyExists
 
-		case "23503": // foreign_key_violation
+		case "23503":
 			return ErrConflict
 
-		case "23514": // check_violation
+		case "23514":
 			return ErrInvalidInput
 
-		case "22P02": // invalid_text_representation
+		case "P0001":
+			if strings.Contains(pgErr.Message, "project stages weight sum cannot exceed 100") {
+				return ErrProjectStageWeightSumExceeded
+			}
 			return ErrInvalidInput
 
-		case "40001", // serialization_failure
-			"40P01": // deadlock_detected
+		case "22P02":
+			return ErrInvalidInput
+
+		case "40001",
+			"40P01":
 			return ErrConflict
 		}
 	}

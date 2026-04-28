@@ -29,6 +29,7 @@ type Deps struct {
 	Assessments                   AssessmentCatalogRepository
 	MyAssessmentResultsProvider   MyAssessmentResultsProvider
 	Public                        ProjectPublicRepo
+	ProjectStages                 ProjectStagesRepo
 	Log                           *slog.Logger
 	Teams                         TeamsRepo
 	TeamMembers                   TeamMembersRepo
@@ -58,6 +59,9 @@ func New(deps Deps) *Service {
 	}
 	if deps.Public == nil {
 		panic("projectsvc: deps.Public is nil")
+	}
+	if deps.ProjectStages == nil {
+		panic("projectsvc: deps.ProjectStages is nil")
 	}
 	if deps.Clock == nil {
 		deps.Clock = time.Now
@@ -151,6 +155,13 @@ func (s *Service) GetProject(ctx context.Context, projectID string) (models.Proj
 	}
 
 	project.MyRights = member.Rights
+
+	summary, err := s.Deps.ProjectStages.GetSummary(ctx, project.ID)
+	if err != nil {
+		return models.Project{}, err
+	}
+
+	project.StagesSummary = &summary
 
 	s.Deps.Log.Info("GetProject: проект успешно получен", "projectID", projectID, "caller", caller)
 
@@ -344,7 +355,18 @@ func (s *Service) ListProjects(
 		}
 	}
 
-	return s.Deps.Projects.ListProjects(ctx, filter)
+	projects, nextToken, err := s.Deps.Projects.ListProjects(ctx, filter)
+	// позже сделать отдельный метод принимает массив ид проектов
+	for i := range projects {
+		summary, err := s.Deps.ProjectStages.GetSummary(ctx, projects[i].ID)
+		if err != nil {
+			return nil, "", err
+		}
+
+		projects[i].StagesSummary = &summary
+	}
+
+	return projects, nextToken, err
 }
 
 func (s *Service) UpdateProject(ctx context.Context, in models.UpdateProjectInput) (models.Project, error) {

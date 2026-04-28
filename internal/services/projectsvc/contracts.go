@@ -124,3 +124,15 @@ type ProjectInvitationsRepo interface {
 
 	HasPendingByProjectAndInvitedUser(ctx context.Context, projectID string, userID string) (bool, error)
 }
+
+type ProjectStagesRepo interface {
+	Create(ctx context.Context, input models.CreateProjectStageInput) (models.ProjectStage, error)
+	GetByID(ctx context.Context, stageID string) (models.ProjectStage, error)
+	ListByProjectID(ctx context.Context, projectID string) ([]models.ProjectStage, error)
+	Update(ctx context.Context, input models.UpdateProjectStageInput) (models.ProjectStage, error)
+	Delete(ctx context.Context, stageID string) (models.ProjectStage, error)
+	CompactPositions(ctx context.Context, projectID string) error
+	Reorder(ctx context.Context, projectID string, items []models.ProjectStageOrderItem) ([]models.ProjectStage, error)
+	Evaluate(ctx context.Context, input models.EvaluateProjectStageInput) (models.ProjectStage, error)
+	GetSummary(ctx context.Context, projectID string) (models.ProjectStagesSummary, error)
+}

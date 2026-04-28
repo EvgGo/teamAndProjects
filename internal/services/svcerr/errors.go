@@ -72,6 +72,27 @@ func ToStatus(err error) error {
 		errors.Is(err, ErrCannotRevokeFounderRootRights):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
+	case errors.Is(err, repo.ErrProjectStageNotFound):
+		return status.Error(codes.NotFound, "project stage not found")
+
+	case errors.Is(err, repo.ErrProjectStageWeightSumExceeded):
+		return status.Error(codes.FailedPrecondition, "project stages weight sum exceeded")
+
+	case errors.Is(err, repo.ErrInvalidProjectStageTitle):
+		return status.Error(codes.InvalidArgument, "invalid project stage title")
+	case errors.Is(err, repo.ErrInvalidProjectStageStatus):
+		return status.Error(codes.InvalidArgument, "invalid project stage status")
+	case errors.Is(err, repo.ErrInvalidProjectStageWeight):
+		return status.Error(codes.InvalidArgument, "invalid project stage weight")
+	case errors.Is(err, repo.ErrInvalidProjectStageProgress):
+		return status.Error(codes.InvalidArgument, "invalid project stage progress")
+	case errors.Is(err, repo.ErrInvalidProjectStageScore):
+		return status.Error(codes.InvalidArgument, "invalid project stage score")
+	case errors.Is(err, repo.ErrInvalidProjectStageOrder):
+		return status.Error(codes.InvalidArgument, "invalid project stage order")
+	case errors.Is(err, repo.ErrProjectStagePositionTaken):
+		return status.Error(codes.InvalidArgument, "project stage position is already taken")
+
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}
