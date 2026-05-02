@@ -179,10 +179,25 @@ func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectPara
 	in.Description = strings.TrimSpace(in.Description)
 	in.TeamName = strings.TrimSpace(in.TeamName)
 
+	teamMode, err := resolveCreateProjectTeamMode(in.TeamMode, in.TeamName)
+	if err != nil {
+		return models.Project{}, err
+	}
+
+	s.Deps.Log.Debug("CreateProject: resolved team mode",
+		"caller", caller,
+		"teamName", in.TeamName,
+		"inputTeamMode", in.TeamMode,
+		"resolvedTeamMode", teamMode,
+	)
+
+	in.TeamMode = teamMode
+
 	s.Deps.Log.Info("CreateProject: запрос",
 		"caller", caller,
 		"name", in.Name,
 		"teamName", in.TeamName,
+		"teamMode", in.TeamMode,
 		"status", in.Status,
 		"isOpen", in.IsOpen,
 		"startedAt", in.StartedAt,
@@ -201,50 +216,10 @@ func (s *Service) CreateProject(ctx context.Context, in models.CreateProjectPara
 
 	var out models.Project
 
-	err := s.Deps.Tx.WithinTx(ctx, func(txCtx context.Context) error {
-		var teamID string
-
-		if in.TeamName == "" {
-			teamName := normalizeTeamName(in.Name, "")
-
-			s.Deps.Log.Debug("CreateProject: создание новой команды",
-				"teamName", teamName,
-				"caller", caller,
-			)
-
-			team, err := s.Deps.Teams.Create(txCtx, models.CreateTeamInput{
-				Name:        teamName,
-				Description: "",
-				IsInvitable: true,
-				IsJoinable:  true,
-				FounderID:   caller,
-				LeadID:      caller,
-			})
-			if err != nil {
-				return fmt.Errorf("create team: %w", err)
-			}
-
-			teamID = team.ID
-
-			if err = s.Deps.TeamMembers.EnsureMemberWithRights(txCtx, teamID, caller, "", fullTeamRights()); err != nil {
-				return fmt.Errorf("ensure creator team member with rights: %w", err)
-			}
-		} else {
-			s.Deps.Log.Debug("CreateProject: поиск существующей команды",
-				"teamName", in.TeamName,
-				"caller", caller,
-			)
-
-			teamAccess, err := s.Deps.Teams.GetByNameForActor(txCtx, in.TeamName, caller)
-			if err != nil {
-				return fmt.Errorf("get team by name for actor: %w", err)
-			}
-
-			if !teamAccess.MyRights.RootRights && !teamAccess.MyRights.ManagerProjects {
-				return repo.ErrForbidden
-			}
-
-			teamID = teamAccess.TeamID
+	err = s.Deps.Tx.WithinTx(ctx, func(txCtx context.Context) error {
+		teamID, err := s.resolveProjectTeamID(txCtx, in, caller)
+		if err != nil {
+			return err
 		}
 
 		p, err := s.Deps.Projects.Create(txCtx, models.CreateProjectInput{
@@ -1352,6 +1327,118 @@ func BuildProjectSkillMatchSummary(
 		MatchedSkills:           matched,
 		MissingProjectSkills:    missing,
 	}
+}
+
+func resolveCreateProjectTeamMode(
+	teamMode models.CreateProjectTeamMode,
+	teamName string,
+) (models.CreateProjectTeamMode, error) {
+
+	switch teamMode {
+	case "", models.CreateProjectTeamModeUnspecified:
+		if teamName == "" {
+			return models.CreateProjectTeamModeAutoGenerate, nil
+		}
+		return models.CreateProjectTeamModeAttachExistingByName, nil
+
+	case models.CreateProjectTeamModeAutoGenerate:
+		if teamName != "" {
+			return "", repo.ErrInvalidInput
+		}
+		return models.CreateProjectTeamModeAutoGenerate, nil
+
+	case models.CreateProjectTeamModeAttachExistingByName:
+		if teamName == "" {
+			return "", repo.ErrInvalidInput
+		}
+		return models.CreateProjectTeamModeAttachExistingByName, nil
+
+	case models.CreateProjectTeamModeCreateNewWithName:
+		if teamName == "" {
+			return "", repo.ErrInvalidInput
+		}
+		return models.CreateProjectTeamModeCreateNewWithName, nil
+
+	default:
+		return "", repo.ErrInvalidInput
+	}
+}
+
+func (s *Service) resolveProjectTeamID(
+	ctx context.Context,
+	in models.CreateProjectParams,
+	caller string,
+) (string, error) {
+
+	switch in.TeamMode {
+	case models.CreateProjectTeamModeAutoGenerate:
+		teamName := normalizeTeamName(in.Name, "")
+
+		s.Deps.Log.Debug("CreateProject: создание новой команды с автогенерируемым именем",
+			"teamName", teamName,
+			"caller", caller,
+		)
+
+		return s.createProjectTeam(ctx, caller, teamName)
+
+	case models.CreateProjectTeamModeCreateNewWithName:
+		s.Deps.Log.Debug("CreateProject: создание новой команды с заданным именем",
+			"teamName", in.TeamName,
+			"caller", caller,
+		)
+
+		return s.createProjectTeam(ctx, caller, in.TeamName)
+
+	case models.CreateProjectTeamModeAttachExistingByName:
+		s.Deps.Log.Debug("CreateProject: поиск существующей команды",
+			"teamName", in.TeamName,
+			"caller", caller,
+		)
+
+		teamAccess, err := s.Deps.Teams.GetByNameForActor(ctx, in.TeamName, caller)
+		if err != nil {
+			return "", fmt.Errorf("get team by name for actor: %w", err)
+		}
+
+		if !teamAccess.MyRights.RootRights && !teamAccess.MyRights.ManagerProjects {
+			return "", repo.ErrForbidden
+		}
+
+		return teamAccess.TeamID, nil
+
+	default:
+		return "", repo.ErrInvalidInput
+	}
+}
+
+func (s *Service) createProjectTeam(
+	ctx context.Context,
+	caller string,
+	teamName string,
+) (string, error) {
+
+	teamName = strings.TrimSpace(teamName)
+	if teamName == "" {
+		return "", repo.ErrInvalidInput
+	}
+
+	team, err := s.Deps.Teams.Create(ctx, models.CreateTeamInput{
+		Name:        teamName,
+		Description: "",
+		IsInvitable: true,
+		IsJoinable:  true,
+		FounderID:   caller,
+		LeadID:      caller,
+	})
+	if err != nil {
+		return "", fmt.Errorf("create team: %w", err)
+	}
+
+	if err = s.Deps.TeamMembers.EnsureMemberWithRights(ctx, team.ID, caller, "", fullTeamRights()); err != nil {
+		return "", fmt.Errorf("ensure creator team member with rights: %w", err)
+	}
+
+	return team.ID, nil
 }
 
 func fullTeamRights() models.TeamRights {

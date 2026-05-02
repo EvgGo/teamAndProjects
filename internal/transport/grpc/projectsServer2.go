@@ -58,6 +58,20 @@ func (s *ProjectsServer) CreateProject(ctx context.Context, req *workspacev1.Cre
 		return nil, status.Error(codes.InvalidArgument, "status must be specified and not UNSPECIFIED")
 	}
 
+	teamMode, ok := mapper.CreateProjectTeamModeToModel(req.GetTeamMode())
+	if !ok {
+		return nil, status.Error(codes.InvalidArgument, "invalid team_mode")
+	}
+
+	s.log.Debug("CreateProject transport: mapped request",
+		"name", req.GetName(),
+		"teamName", req.GetTeamName(),
+		"protoTeamModeString", req.GetTeamMode().String(),
+		"protoTeamModeNumber", int32(req.GetTeamMode()),
+		"modelTeamMode", teamMode,
+		"skillIdsRaw", req.GetSkillIds(),
+	)
+
 	skillIDs, err := utils.StringsToInts(req.GetSkillIds())
 	if err != nil {
 		return nil, err
@@ -71,6 +85,7 @@ func (s *ProjectsServer) CreateProject(ctx context.Context, req *workspacev1.Cre
 		StartedAt:   startedAt,
 		FinishedAt:  finishedAtPtr,
 		TeamName:    req.GetTeamName(),
+		TeamMode:    teamMode,
 		SkillIDs:    skillIDs,
 	}
 
