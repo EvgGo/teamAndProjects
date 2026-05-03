@@ -774,6 +774,33 @@ func (r *TeamMembersRepo) EnsureMemberWithRights(
 	return nil
 }
 
+func (r *TeamMembersRepo) ClearLeadIfEquals(ctx context.Context, teamID, userID string) error {
+
+	teamID = strings.TrimSpace(teamID)
+	userID = strings.TrimSpace(userID)
+
+	if teamID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+
+	qr := querierFromCtx(ctx, r.pool)
+
+	const query = `
+		update teams
+		set lead_id = null,
+		    updated_at = now()
+		where id = $1
+		  and lead_id = $2
+	`
+
+	_, err := qr.Exec(ctx, query, teamID, userID)
+	if err != nil {
+		return fmt.Errorf("clear team lead: %w", err)
+	}
+
+	return nil
+}
+
 func (r *TeamMembersRepo) EnsureTeamMemberExists(
 	ctx context.Context,
 	teamID string,

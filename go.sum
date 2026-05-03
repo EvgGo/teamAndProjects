@@ -1,7 +1,7 @@
 github.com/BurntSushi/toml v1.2.1 h1:9F2/+DoOYIOksmaJFPw1tGFy1eDnIJXg+UHjuD8lTak=
 github.com/BurntSushi/toml v1.2.1/go.mod h1:CxXYINrC8qIiEnFrOxCa7Jy5BFHlXnUU2pbicEuybxQ=
-github.com/EvgGo/proto v0.26.2 h1:mRfU4AHE/Eciu3Lft3ftSEUtenlLv28B658Av23/A3o=
-github.com/EvgGo/proto v0.26.2/go.mod h1:A4L6hUd55+vJycZfX2ckgRITl4mdgODzRPXr3cAnpx4=
+github.com/EvgGo/proto v0.26.3 h1:JtjJbanDelDAqFeLVZY0IQRkdsQCJYNlAeqnkepv0wo=
+github.com/EvgGo/proto v0.26.3/go.mod h1:A4L6hUd55+vJycZfX2ckgRITl4mdgODzRPXr3cAnpx4=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=

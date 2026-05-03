@@ -25,7 +25,7 @@ type TeamMembersRepo interface {
 	GetMember(ctx context.Context, teamID, userID string) (models.TeamMember, error)
 	ListByTeam(ctx context.Context, filter models.ListTeamMembersFilter) ([]models.TeamMember, string, error)
 	Remove(ctx context.Context, teamID, userID string) error
-
+	ClearLeadIfEquals(ctx context.Context, teamID, userID string) error
 	GetTeamAccess(ctx context.Context, teamID string, actorID string) (*models.TeamAccessRow, error)
 	UpdateTeamMemberDuties(ctx context.Context, in models.UpdateTeamMemberInput) (*models.TeamMember, error)
 	UpdateTeamMemberRights(ctx context.Context, params models.UpdateTeamMemberRightsParams) (*models.TeamMember, error)
@@ -45,7 +45,7 @@ type Service interface {
 	UpdateTeam(ctx context.Context, in models.UpdateTeamInput) (models.Team, error)
 	DeleteTeam(ctx context.Context, teamID string) error
 	ListTeams(ctx context.Context, filter models.ListTeamsFilter) ([]models.Team, string, error)
-
+	LeaveTeam(ctx context.Context, teamID string) error
 	ListTeamMembers(ctx context.Context, filter models.ListTeamMembersFilter) ([]models.TeamMember, string, error)
 	UpdateTeamMember(ctx context.Context, in models.UpdateTeamMemberInput) (*models.TeamMember, error)
 	RemoveTeamMember(ctx context.Context, teamID, userID string) error

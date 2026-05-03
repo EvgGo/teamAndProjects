@@ -2,10 +2,13 @@ package teamsvc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"teamAndProjects/internal/adapters/sso"
+	"teamAndProjects/internal/authctx"
+	"teamAndProjects/internal/services/projectsvc"
 	"teamAndProjects/internal/services/svcerr"
 	"teamAndProjects/pkg/utils"
 
@@ -14,12 +17,13 @@ import (
 )
 
 type service struct {
-	tx            TxManager
-	teams         TeamsRepo
-	members       TeamMembersRepo
-	memberDetails TeamMemberDetailsRepository
-
-	viewerProfile sso.ViewerProfileClient
+	tx             TxManager
+	teams          TeamsRepo
+	members        TeamMembersRepo
+	memberDetails  TeamMemberDetailsRepository
+	projects       projectsvc.ProjectsRepo
+	projectMembers projectsvc.ProjectMemberRepo
+	viewerProfile  sso.ViewerProfileClient
 
 	log *slog.Logger
 }
@@ -618,4 +622,72 @@ func (s *service) ListTeamProjectsForAssignment(
 		Items:         items,
 		NextPageToken: nextPageToken,
 	}, nil
+}
+
+func (s *service) LeaveTeam(ctx context.Context, teamID string) error {
+
+	actorID, err := actorIDFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	teamID = strings.TrimSpace(teamID)
+	if teamID == "" {
+		return svcerr.ErrInvalidTeamID
+	}
+
+	team, err := s.teams.GetByIDForActor(ctx, teamID, actorID)
+	if err != nil {
+		return fmt.Errorf("get team: %w", err)
+	}
+
+	if team.FounderID == actorID {
+		return svcerr.ErrTeamFounderCannotLeave
+	}
+
+	hasCreatedProjects, err := s.projects.HasUserCreatedProjectsInTeam(ctx, teamID, actorID)
+	if err != nil {
+		return fmt.Errorf("check user created projects in team: %w", err)
+	}
+	if hasCreatedProjects {
+		return svcerr.ErrTeamMemberOwnsProjects
+	}
+
+	err = s.tx.WithinTx(ctx, func(txCtx context.Context) error {
+		if team.LeadID == actorID {
+			if err = s.members.ClearLeadIfEquals(txCtx, teamID, actorID); err != nil {
+				return fmt.Errorf("clear team lead: %w", err)
+			}
+		}
+
+		_, err = s.projectMembers.RemoveMemberFromAllTeamProjects(txCtx, teamID, actorID)
+		if err != nil {
+			return fmt.Errorf("remove member from all team projects: %w", err)
+		}
+
+		err = s.members.Remove(txCtx, teamID, actorID)
+		if err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				return svcerr.ErrUserIsNotTeamMember
+			}
+
+			return fmt.Errorf("remove team member: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func actorIDFromContext(ctx context.Context) (string, error) {
+
+	actorID, ok := authctx.UserID(ctx)
+	if !ok || strings.TrimSpace(actorID) == "" {
+		return "", svcerr.ErrInvalidActorID
+	}
+	return actorID, nil
 }

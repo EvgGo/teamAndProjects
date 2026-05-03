@@ -446,6 +446,19 @@ func (s *TeamsServer) ListTeamProjectsForAssignment(
 	}, nil
 }
 
+func (s *TeamsServer) LeaveTeam(
+	ctx context.Context,
+	req *workspacev1.LeaveTeamRequest,
+) (*emptypb.Empty, error) {
+
+	err := s.svc.LeaveTeam(ctx, req.GetTeamId())
+	if err != nil {
+		return nil, svcerr.ToStatus(err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
 func teamProjectAssignmentItemToProto(
 	item models.TeamProjectAssignmentItem,
 ) *workspacev1.TeamProjectAssignmentItem {
