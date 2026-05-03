@@ -69,7 +69,12 @@ func ToStatus(err error) error {
 		errors.Is(err, ErrCannotChangeOwnTeamRights),
 		errors.Is(err, ErrCannotRemoveSelfFromTeam),
 		errors.Is(err, ErrCannotRemoveTeamFounder),
-		errors.Is(err, ErrCannotRevokeFounderRootRights):
+		errors.Is(err, ErrCannotRevokeFounderRootRights),
+		errors.Is(err, ErrProjectCreatorCannotLeave),
+		errors.Is(err, ErrUserIsNotProjectMember),
+		errors.Is(err, ErrTeamFounderCannotLeave),
+		errors.Is(err, ErrTeamMemberOwnsProjects),
+		errors.Is(err, ErrUserIsNotTeamMember):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	case errors.Is(err, repo.ErrProjectStageNotFound):
@@ -118,6 +123,9 @@ var (
 	ErrProjectInvitationNotPending     = errors.New("project invitation is not pending")
 	ErrProjectInvitationWrongRecipient = errors.New("project invitation belongs to another user")
 
+	ErrProjectCreatorCannotLeave = errors.New("project creator cannot leave project")
+	ErrUserIsNotProjectMember    = errors.New("user is not a project member")
+
 	ErrTeamAccessForbidden                = errors.New("forbidden to access this team")
 	ErrUpdateTeamForbidden                = errors.New("forbidden to update team")
 	ErrDeleteTeamForbidden                = errors.New("forbidden to delete team")
@@ -125,6 +133,9 @@ var (
 	ErrUpdateTeamMemberDutiesForbidden    = errors.New("forbidden to update team member duties")
 	ErrUpdateTeamMemberRightsForbidden    = errors.New("forbidden to update team member rights")
 	ErrAssignTeamMemberToProjectForbidden = errors.New("forbidden to assign team member to project")
+	ErrTeamFounderCannotLeave             = errors.New("team founder cannot leave team")
+	ErrTeamMemberOwnsProjects             = errors.New("team member owns projects in this team")
+	ErrUserIsNotTeamMember                = errors.New("user is not a team member")
 	ErrManageTeamProjectsForbidden        = errors.New("forbidden to manage team projects")
 	ErrCannotChangeOwnTeamRights          = errors.New("cannot change your own team rights")
 	ErrCannotRemoveSelfFromTeam           = errors.New("cannot remove yourself from team")

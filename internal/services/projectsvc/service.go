@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"strings"
 	"teamAndProjects/internal/adapters/sso"
+	"teamAndProjects/internal/services/svcerr"
 	"teamAndProjects/pkg/utils"
 	"time"
 
@@ -479,6 +480,48 @@ func (s *Service) SetOpen(ctx context.Context, projectID string, isOpen bool) (m
 	}
 	s.Deps.Log.Info("SetOpen: статус открытости изменeн", "projectID", projectID, "caller", caller, "isOpen", isOpen)
 	return p, nil
+}
+
+func (s *Service) LeaveProject(
+	ctx context.Context,
+	projectID string,
+) error {
+
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return svcerr.ErrInvalidProjectID
+	}
+
+	userID, ok := authctx.UserID(ctx)
+	if !ok || strings.TrimSpace(userID) == "" {
+		return svcerr.ErrUnauthenticated
+	}
+
+	userID = strings.TrimSpace(userID)
+
+	project, err := s.Deps.Projects.GetByID(ctx, projectID)
+	if err != nil {
+		return svcerr.ToStatus(err)
+	}
+
+	if project.CreatorID == userID {
+		return svcerr.ErrProjectCreatorCannotLeave
+	}
+
+	_, err = s.Deps.ProjectMembers.GetMember(ctx, projectID, userID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return svcerr.ErrUserIsNotProjectMember
+		}
+
+		return svcerr.ToStatus(err)
+	}
+
+	if err = s.Deps.ProjectMembers.DeleteProjectMember(ctx, projectID, userID); err != nil {
+		return svcerr.ToStatus(err)
+	}
+
+	return nil
 }
 
 func (s *Service) ListPublicProjects(ctx context.Context, filter models.ListPublicProjectsFilter) ([]models.PublicProjectRow, string, error) {

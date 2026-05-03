@@ -15,6 +15,7 @@ type ProjectMemberRepo interface {
 	AddMember(ctx context.Context, input models.AddProjectMemberInput) (models.ProjectMember, error)
 	UpdateRights(ctx context.Context, projectID, userID string, rights models.ProjectRights) (models.ProjectMember, error)
 	ListMembers(ctx context.Context, params models.ListProjectMembersParams) ([]models.ProjectMember, string, error)
+	DeleteProjectMember(ctx context.Context, projectID string, userID string) error
 	RemoveMember(ctx context.Context, projectID, userID string) error
 	RemoveMemberFromAllTeamProjects(ctx context.Context, teamID, userID string) (int64, error)
 	ListProjectMemberDetails(ctx context.Context, filter models.ListProjectMemberDetailsFilter) ([]models.ProjectMemberDetailsRow, string, error)

@@ -423,6 +423,37 @@ func (r *ProjectMembersRepo) RemoveMemberFromAllTeamProjects(
 	return tag.RowsAffected(), nil
 }
 
+func (r *ProjectMembersRepo) DeleteProjectMember(
+	ctx context.Context,
+	projectID string,
+	userID string,
+) error {
+
+	projectID = strings.TrimSpace(projectID)
+	userID = strings.TrimSpace(userID)
+
+	if projectID == "" || userID == "" {
+		return ErrInvalidInput
+	}
+
+	const q = `
+		DELETE FROM project_members
+		WHERE project_id = $1
+		  AND user_id = $2
+	`
+
+	tag, err := r.pool.Exec(ctx, q, projectID, userID)
+	if err != nil {
+		return fmt.Errorf("delete project member: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 type projectMembersCursor struct {
 	LastUserID string `json:"last_user_id"`
 }

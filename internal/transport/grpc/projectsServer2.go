@@ -413,6 +413,22 @@ func (s *ProjectsServer) SetProjectOpen(ctx context.Context, req *workspacev1.Se
 	return mapper.ProjectToProto(&project), nil
 }
 
+func (s *ProjectsServer) LeaveProject(
+	ctx context.Context,
+	req *workspacev1.LeaveProjectRequest,
+) (*emptypb.Empty, error) {
+
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+
+	if err := s.svc.LeaveProject(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
 // ListProjectMembers возвращает список участников проекта
 func (s *ProjectsServer) ListProjectMembers(ctx context.Context, req *workspacev1.ListProjectMembersRequest) (*workspacev1.ListProjectMembersResponse, error) {
 
