@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	authv1 "github.com/EvgGo/proto/proto/gen/go/sso"
-	"github.com/joho/godotenv"
 	"log"
 	"log/slog"
 	"os"
@@ -20,9 +19,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if err := godotenv.Load(".env"); err != nil {
-		log.Fatalf("Внимание: файл .env не найден, используются переменные окружения по умолчанию")
-	}
+	//if err := godotenv.Load(".env"); err != nil {
+	//	log.Fatalf("Внимание: файл .env не найден, используются переменные окружения по умолчанию")
+	//}
 
 	cfg := config.MustLoad("CONFIG_PATH_PROJECTS")
 

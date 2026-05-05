@@ -51,14 +51,17 @@ func getLogLevel(logLevel string) slog.Level {
 	}
 }
 func getHandlerOptions(level slog.Level) *slog.HandlerOptions {
+
+	msk := time.FixedZone("MSK", 3*60*60)
+
 	return &slog.HandlerOptions{
 		Level: level,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if a.Key == slog.TimeKey {
-				location, _ := time.LoadLocation("Etc/GMT-3")
+
 				return slog.Attr{
 					Key:   slog.TimeKey,
-					Value: slog.StringValue(time.Now().In(location).Format(time.RFC3339)),
+					Value: slog.StringValue(time.Now().In(msk).Format(time.RFC3339)),
 				}
 			}
 			return a
